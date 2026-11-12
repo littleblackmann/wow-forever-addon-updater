@@ -30,10 +30,11 @@ def main():
             baseline.mkdir()
             for folder in (*live_folders, 'XiaoHeiAddonHub'):
                 shutil.copytree(u.ADDONS / folder, addons / folder)
-            for pkg in u.PACKAGES:
-                version = u.installed_version(u.ADDONS, pkg)
-                name = f'{pkg.key}-{version}.zip'
-                shutil.copy2(u.BASELINES / name, baseline / name)
+            if '--no-baselines' not in sys.argv:
+                for pkg in u.PACKAGES:
+                    version = u.installed_version(u.ADDONS, pkg)
+                    name = f'{pkg.key}-{version}.zip'
+                    shutil.copy2(u.BASELINES / name, baseline / name)
         args = dict(game=game, backups=root/'backups', baselines=baseline, running=lambda: False)
         if '--online-catalog' in sys.argv:
             import online

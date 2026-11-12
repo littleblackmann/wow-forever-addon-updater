@@ -235,7 +235,8 @@ class Release:
     digest: str = ""
 
 
-def find_release(pkg: Package, patch: str) -> Release:
+def find_release(pkg: Package, patch: str, version: str | None = None) -> Release:
+    version = version_name(version) if version is not None else None
     owner, project = pkg.source.split("/", 1)
     if owner.isdecimal():
         data = json.loads(fetch(f"https://api.cfwidget.com/{owner}", 6 * 1024**2))
@@ -247,7 +248,8 @@ def find_release(pkg: Package, patch: str) -> Release:
             name = file.get("name", "")
             match = re.fullmatch(pkg.archive, name, re.I)
             ident = file.get("id")
-            if not (match and type(ident) is int and ident > 0 and file.get("type") == "release"
+            if not (match and (version is None or version_name(match[1]) == version)
+                    and type(ident) is int and ident > 0 and file.get("type") == "release"
                     and patch in file.get("versions", []) and file.get("url") == f"{project_url}/files/{ident}"):
                 continue
             url = f"https://edge.forgecdn.net/files/{ident // 1000}/{ident % 1000:03d}/{urllib.parse.quote(name)}"
@@ -255,14 +257,56 @@ def find_release(pkg: Package, patch: str) -> Release:
         if releases:
             return max(releases, key=lambda item: item[0])[1]
     else:
-        data = json.loads(fetch(f"https://api.github.com/repos/{pkg.source}/releases/latest", 2 * 1024**2))
-        if not (data.get("draft") or data.get("prerelease")):
-            for asset in data.get("assets", []):
-                match = re.fullmatch(pkg.archive, asset.get("name", ""), re.I)
-                url = asset.get("browser_download_url", "")
-                if match and url.startswith(f"https://github.com/{pkg.source}/releases/download/"):
-                    return Release(version_name(match[1]), url, int(asset["size"]), asset.get("digest") or "")
-    raise SkipUpdate(f"找不到適用於《永恆》{patch} 的發行檔。")
+        # A portable copy may be taking over an existing, older installation.
+        # Recover its exact original from author releases instead of guessing
+        # that the installed (possibly translated) files are pristine.
+        for page in range(1, 6) if version is not None else (1,):
+            suffix = f"?per_page=100&page={page}" if version is not None else "/latest"
+            data = json.loads(fetch(f"https://api.github.com/repos/{pkg.source}/releases{suffix}", 6 * 1024**2))
+            releases = data if version is not None else [data]
+            if not isinstance(releases, list):
+                raise SkipUpdate("作者發行清單格式無效。")
+            if not releases:
+                break
+            for release in releases:
+                if release.get("draft") or release.get("prerelease"):
+                    continue
+                for asset in release.get("assets", []):
+                    match = re.fullmatch(pkg.archive, asset.get("name", ""), re.I)
+                    url = asset.get("browser_download_url", "")
+                    if (match and (version is None or version_name(match[1]) == version)
+                            and url.startswith(f"https://github.com/{pkg.source}/releases/download/")):
+                        return Release(version_name(match[1]), url, int(asset["size"]), asset.get("digest") or "")
+    wanted = f"、插件版本 {version}" if version is not None else ""
+    raise SkipUpdate(f"找不到適用於《永恆》{patch}{wanted} 的作者正式發行檔。")
+
+
+def recover_baseline(pkg: Package, version: str, patch: str, interface: str,
+                     folders: tuple[str, ...], baselines: Path):
+    """Retrieve and validate an exact author original; never derive it from live files."""
+    version = version_name(version)
+    destination = baselines / f"{pkg.key}-{version}.zip"
+    if destination.is_file():
+        assert_plain(destination)
+        return
+    try:
+        release = find_release(pkg, patch, version)
+        if release.version != version or not 0 < release.size <= MAX_ZIP:
+            raise SkipUpdate("舊版原版檔的版本或大小無效。")
+        raw = fetch(release.url, MAX_ZIP)
+        if (len(raw) != release.size
+                or (release.digest and release.digest != "sha256:" + hashlib.sha256(raw).hexdigest())):
+            raise SkipUpdate("舊版原版檔完整性驗證失敗。")
+        with tempfile.TemporaryDirectory(prefix="舊版比對-", dir=baselines) as tmp:
+            archive = Path(tmp) / "original.zip"
+            archive.write_bytes(raw)
+            original = read_zip(archive, folders)
+            validate_package(original, pkg, folders, interface, version)
+            if destination.exists():
+                raise SkipUpdate("比對檔在準備期間有變動。")
+            archive.rename(destination)
+    except Exception as exc:
+        raise SkipUpdate(f"無法補取 {version} 舊版原版比對檔，已保留插件；{process_error(exc)}") from exc
 
 
 def read_zip(archive: Path, folders: tuple[str, ...]):
@@ -453,7 +497,7 @@ def install_package(pkg: Package, release: Release, addons: Path, folders: tuple
         raise SkipUpdate("主插件缺少但仍有其他模組，請先手動確認，避免覆蓋現有檔案。")
     old_zip = baselines / f"{pkg.key}-{current_version}.zip" if current_version else None
     if old_zip and not old_zip.is_file() and current_version != release.version:
-        raise SkipUpdate("缺少與現有版本相符的原版 ZIP，無法辨識本機修改。")
+        raise SkipUpdate(f"缺少 {current_version} 舊版原版比對檔，已保留插件，請重新執行更新以補取。")
     if not 0 < release.size <= MAX_ZIP:
         raise SkipUpdate("下載大小超過上限或無效。")
     raw = fetch(release.url, MAX_ZIP)
@@ -655,10 +699,16 @@ def update_packages(apply, report, addons, backups, baselines, running, patch, i
                     continue
                 available += 1
                 if not apply:
+                    note = "可安裝" if not current else "可同步整合／補齊模組" if latest == current else "可更新"
+                    if current and no_baseline and current != latest:
+                        note += f"｜更新時會先補取 {current} 舊版原版比對檔"
                     report(pkg.label, current or "未安裝", latest,
-                           "可安裝" if not current else "可同步整合／補齊模組" if latest == current else "可更新")
+                           note)
                     continue
                 folders = pkg.managed_folders
+                if current and no_baseline and current != latest:
+                    existing = tuple(name for name in folders if (addons / name).is_dir())
+                    recover_baseline(pkg, current, patch, interface, existing, baselines)
                 backup, count = install_package(pkg, release, addons, folders, current, interface, backups, baselines, running,
                                                 catalog.customizations if catalog is not None else None,
                                                 previous(pkg.key) if catalog is not None and current else None)

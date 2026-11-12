@@ -154,7 +154,7 @@ class UpdaterWindow:
             client = f"《魔獸世界：永恆》 {patch}"
         except Exception:
             client = "請先選擇《魔獸世界：永恆》的遊戲資料夾"
-        self.client_text.set(f"{client}　·　缺少自動安裝　·　保留本機修改")
+        self.client_text.set(client)
 
     def update_install_text(self):
         try:
