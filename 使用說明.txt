@@ -57,3 +57,9 @@ GitHub連不上時會沿用上次成功下載且驗證通過的整合清單；�
 
 線上發布位置：https://github.com/littleblackmann/wow-forever-addon-updater/releases
 第一次使用線上功能，請先下載本版；更早沒有線上功能的版本仍需手動換一次。
+
+
+v1.1.1 更新說明
+修正管理器介面更新後可能無法自動重新開啟，以及相鄰但互不重疊的文字修改被誤判為衝突。
+若目前是 v1.1.0，第一次更新完成後沒有自動開啟，直接再開一次 exe 即可；
+也可下載最新版 ZIP 換上新版，保留原本 settings.json、baselines／clients 與 online 資料夾。

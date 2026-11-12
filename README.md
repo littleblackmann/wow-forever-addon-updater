@@ -3,7 +3,7 @@
 替《魔獸世界：永恆》安裝、更新整合插件，保留可合併的繁中與本機修改。
 
 從 [最新版本](https://github.com/littleblackmann/wow-forever-addon-updater/releases/latest) 下載
-`XiaoHeiForeverUpdater-v1.1.0.zip`（或後續新版 ZIP），解壓到桌面等可寫入的資料夾，開啟 exe。
+`XiaoHeiForeverUpdater-v1.1.1.zip`（或後續新版 ZIP），解壓到桌面等可寫入的資料夾，開啟 exe。
 不需要另外安裝 Python 或 Git。
 
 1. 按「選擇資料夾」，選裡面有 `_forever_` 的 `World of Warcraft` 資料夾。
@@ -24,6 +24,7 @@ GitHub 斷線時沿用上次驗證成功的清單。插件下載與查版仍需�
 
 已排除 RestedXP、AmobiCompanion、Forever Quest Pins；目前使用 Questie 與 QuestieDB。
 Shortest Path Forever 的 ForeverCore 依賴會一併安裝。
+v1.1.1修正管理器更新後的自動重開；從v1.1.0第一次升級若沒自動開啟，手動再點exe即可，遊戲插件不需要重裝。
 遇到衝突、無適用版本、依賴缺少或驗證失敗時，管理器會顯示原因並保留現況。
 
 整合中的第三方插件與繁中檔案保留原作者授權，來源見插件清單；管理器從作者發行頁下載原版。

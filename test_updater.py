@@ -153,6 +153,16 @@ class InstallTests(unittest.TestCase):
         names = {p.anchor for p in u.PACKAGES}
         self.assertTrue(names.isdisjoint({'RXPGuides', 'AmobiCompanion', 'ForeverQuestPins'}))
 
+    def test_windows_duplicated_cr_does_not_block_localized_version_update(self):
+        base=b'## Title: Test\n## Notes: Original\n## Version: 1.0\n'
+        local=base.replace(b'## Notes:',b'## Title-zhTW: Localized\n## Notes:').replace(
+            b'## Version:',b'## Notes-zhTW: Localized notes\n## Version:').replace(b'\n',b'\r\r\n')
+        fresh=base.replace(b'1.0',b'1.1').replace(b'\n',b'\r\n')
+        result=u.merge_text(base,local,fresh,self.root,'Sample/Sample.toc')
+        self.assertIn(b'## Title-zhTW: Localized',result)
+        self.assertIn(b'## Version: 1.1',result)
+        self.assertNotIn(b'\r\r\n',result)
+
 
 if __name__ == '__main__':
     unittest.main()

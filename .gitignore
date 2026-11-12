@@ -2,6 +2,8 @@ baselines/
 clients/
 online/
 .updates/
+.customization-build-backups/
+.prepare-customizations-*/
 settings.json
 __pycache__/
 *.exe

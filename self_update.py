@@ -72,7 +72,8 @@ def schedule(path: Path, sha256: str):
     target = Path(sys.executable) if getattr(sys, 'frozen', False) else u.APP / '永恆插件更新器.exe'
     if target.resolve().parent != u.APP.resolve() or target.suffix.lower() != '.exe':
         raise u.SkipUpdate('程式更新目標位置無效')
-    env = dict(os.environ, XIAOHEI_UPDATE_TARGET=str(target), XIAOHEI_UPDATE_STAGED=str(path),
+    env = dict(os.environ, PYINSTALLER_RESET_ENVIRONMENT='1',
+               XIAOHEI_UPDATE_TARGET=str(target), XIAOHEI_UPDATE_STAGED=str(path),
                XIAOHEI_UPDATE_BACKUP=str(folder / f'previous-{uuid.uuid4().hex}.exe'),
                XIAOHEI_UPDATE_LOG=str(folder / 'last-update.log'), XIAOHEI_UPDATE_SHA=sha256,
                XIAOHEI_UPDATE_PID=str(os.getpid()))

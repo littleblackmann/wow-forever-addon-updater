@@ -158,9 +158,49 @@ class OnlineTests(unittest.TestCase):
         with patch.object(u, 'APP', self.f.root), patch.object(self_update.subprocess, 'Popen') as launch:
             self_update.schedule(path, sha)
             self.assertEqual(launch.call_args.kwargs['env']['XIAOHEI_UPDATE_STAGED'], str(path))
+            self.assertEqual(launch.call_args.kwargs['env']['PYINSTALLER_RESET_ENVIRONMENT'],'1')
             with self.assertRaises(u.SkipUpdate): self_update.schedule(path, '0' * 64)
             with self.assertRaises(u.SkipUpdate): self_update.schedule(self.f.root / 'outside.exe', sha)
         self.assertEqual(launch.call_count, 1)
+
+    def test_published_new_addon_installs_without_changing_old_client_package_list(self):
+        one=self.sync()
+        self.install(one)
+        extra=replace(self.f.pkg,key='extra',label='New addon',anchor='Extra',folders=())
+        docs,release=self.bundle('with-new-addon')
+        manifest=json.loads(docs['catalog.json'])
+        manifest['packages'].append(asdict(extra))
+        docs['catalog.json']=json.dumps(manifest).encode()
+        release['assets'][0].update(size=len(docs['catalog.json']),digest='sha256:'+hashlib.sha256(docs['catalog.json']).hexdigest())
+        with patch.object(o,'release',return_value=release),patch.object(u,'fetch',side_effect=lambda url,_:docs[url.rsplit('/',1)[1]]):
+            two=o.sync_catalog()
+        self.assertEqual(len(two.packages),2)
+        sample_raw,sample_release=self.f.archive()
+        with patch.object(self.f,'pkg',extra): extra_raw,extra_release=self.f.archive()
+        releases={'sample':replace(sample_release,url='https://fixture.invalid/sample.zip'),
+                  'extra':replace(extra_release,url='https://fixture.invalid/extra.zip')}
+        downloads={releases['sample'].url:sample_raw,releases['extra'].url:extra_raw}
+        rows=[]
+        with patch.object(u,'PACKAGES',(self.f.pkg,)),patch.object(u,'find_release',side_effect=lambda p,_:releases[p.key]), \
+                patch.object(u,'fetch',side_effect=lambda url,_:downloads[url]),patch.object(u,'recycle_completed_file'):
+            result=u.run_updates(True,lambda *row:rows.append(row),game=self.f.game,backups=self.f.backups,
+                                 baselines=self.f.baselines,running=lambda:False,catalog=two)
+            again=u.run_updates(False,lambda *r:None,game=self.f.game,backups=self.f.backups,
+                                baselines=self.f.baselines,running=lambda:False,catalog=two)
+        self.assertEqual(result[2],0,rows)
+        self.assertTrue((self.f.addons/'Extra/main.lua').is_file())
+        self.assertEqual(again,(0,0,0))
+
+    def test_vendor_version_update_keeps_catalog_translation(self):
+        catalog=self.sync()
+        self.install(catalog)
+        raw,release=self.f.archive('1.1',{'Sample/main.lua':b'local label = "English"\nlocal value = 2\n'})
+        rows=[]
+        with patch.object(u,'find_release',return_value=release),patch.object(u,'fetch',return_value=raw),patch.object(u,'recycle_completed_file'):
+            result=u.run_updates(True,lambda *row:rows.append(row),game=self.f.game,backups=self.f.backups,
+                                 baselines=self.f.baselines,running=lambda:False,catalog=catalog)
+        self.assertEqual(result,(1,1,0),rows)
+        self.assertEqual((self.f.addons/'Sample/main.lua').read_bytes(),b'local label = "Chinese one"\nlocal value = 2\n')
 
 
 if __name__ == '__main__':

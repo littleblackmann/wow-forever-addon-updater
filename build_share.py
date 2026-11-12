@@ -1,6 +1,8 @@
 """Build the portable package's addon-only customizations from this checkout."""
 from pathlib import Path
 import json
+import tempfile
+import uuid
 import zipfile
 
 import updater as u
@@ -8,6 +10,33 @@ import updater as u
 
 def build_customizations(addons: Path = u.ADDONS, baselines: Path = u.BASELINES,
                          output: Path = u.APP / "customizations"):
+    output = output.absolute()
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix='.prepare-customizations-', dir=output.parent) as tmp:
+        ready = Path(tmp) / 'ready'
+        _write_customizations(addons, baselines, ready)
+        previous = None
+        if output.exists():
+            u.assert_plain(output)
+            if not output.is_dir():
+                raise u.SkipUpdate('整合輸出位置不是資料夾')
+            # Keep the previous complete build outside the published bundle.
+            backups = output.parent / '.customization-build-backups'
+            backups.mkdir(exist_ok=True)
+            u.assert_plain(backups)
+            previous = backups / uuid.uuid4().hex
+            if output.resolve().parent != output.parent.resolve() or previous.resolve().parent != backups.resolve():
+                raise u.SkipUpdate('整合輸出備份位置不在預期資料夾')
+            output.rename(previous)
+        try:
+            ready.rename(output)
+        except Exception:
+            if previous is not None:
+                previous.rename(output)
+            raise
+
+
+def _write_customizations(addons: Path, baselines: Path, output: Path):
     output.mkdir(exist_ok=True)
     manifest = {}
     for pkg in u.PACKAGES:

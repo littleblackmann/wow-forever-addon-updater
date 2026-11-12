@@ -329,6 +329,12 @@ def validate_package(files, pkg: Package, folders: tuple[str, ...], interface: s
                     raise SkipUpdate(f"{folder} 缺少 TOC 載入檔 {filename}")
 
 
+def normalized_text(data: bytes) -> str:
+    # Some existing localized files have CRCRLF from repeated Windows writes.
+    # Treat that as one line break; keep real blank CRLF/CRLF lines separate.
+    return re.sub(r"\r+\n", "\n", data.decode("utf-8-sig")).replace("\r", "\n")
+
+
 def merge_text(base: bytes, local: bytes, fresh: bytes, temp: Path, relative: str) -> bytes:
     git = shutil.which("git")
     if not git:
@@ -337,9 +343,13 @@ def merge_text(base: bytes, local: bytes, fresh: bytes, temp: Path, relative: st
         raise SkipUpdate(f"本機和新版都修改了 {relative}")
     paths = [temp / name for name in ("local.txt", "base.txt", "new.txt")]
     for path, contents in zip(paths, (local, base, fresh)):
-        path.write_bytes(contents.decode("utf-8-sig").replace("\r\n", "\n").encode("utf-8"))
+        path.write_bytes(normalized_text(contents).encode("utf-8"))
     result = subprocess.run([git, "merge-file", "-p", "--", *map(str, paths)], capture_output=True,
                             timeout=15, creationflags=NO_WINDOW)
+    if result.returncode == 1:
+        # Git also conflicts on adjacent, non-overlapping line edits. The built-in
+        # merger can resolve only provably separate edits; overlaps still stop.
+        return merge_text_python(base, local, fresh, relative)
     if result.returncode:
         raise SkipUpdate(f"本機修改與新版有衝突 {relative}")
     bom = b"\xef\xbb\xbf" if fresh.startswith(b"\xef\xbb\xbf") else b""
@@ -350,7 +360,7 @@ def merge_text_python(base: bytes, local: bytes, fresh: bytes, relative: str) ->
     """Conservative three-way fallback for friends' computers without Git."""
     if PurePosixPath(relative).suffix.lower() not in {".lua", ".toc", ".xml", ".md", ".txt", ".json"}:
         raise SkipUpdate(f"本機和新版都修改了 {relative}")
-    original, ours, theirs = (b.decode("utf-8-sig").replace("\r\n", "\n").splitlines(keepends=True)
+    original, ours, theirs = (normalized_text(b).splitlines(keepends=True)
                               for b in (base, local, fresh))
     def changes(lines):
         return [(i, j, lines[a:b]) for kind, i, j, a, b in
@@ -363,8 +373,10 @@ def merge_text_python(base: bytes, local: bytes, fresh: bytes, relative: str) ->
         a, b, _ = right
         for c, d, _ in local_edits:
             overlap = max(a, c) < min(b, d)
-            # An insertion on an edited boundary is ambiguous; keep the live file.
-            insertion = (a == b and c <= a <= d) or (c == d and a <= c <= b)
+            # Boundary insertions are ordered before/after the replaced span.
+            # Competing insertions or an insertion inside another edit conflict.
+            insertion = ((a == b and c == d and a == c) or
+                         (a == b and c < a < d) or (c == d and a < c < b))
             if overlap or insertion:
                 raise SkipUpdate(f"本機修改與新版有衝突 {relative}")
         edits.append(right)
