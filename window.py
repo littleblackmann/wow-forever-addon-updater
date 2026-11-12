@@ -4,6 +4,7 @@ import os
 import queue
 import threading
 import tkinter as tk
+import webbrowser
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 import online
@@ -14,6 +15,7 @@ from updater import (APP, RESOURCES, backup_location, client_patch, process_erro
 
 
 APP_ICON = RESOURCES / "圖示" / "WoW-Forever.ico"
+PROJECT_URL = "https://littleblackmann.github.io/projects/forever-addon-manager.html"
 
 
 class UpdaterWindow:
@@ -45,12 +47,28 @@ class UpdaterWindow:
 
         header = tk.Frame(root, bg="#152742", padx=23, pady=16)
         header.pack(fill="x")
-        tk.Label(header, text="小黑的永恆插件更新器", bg="#152742", fg="white",
+        header.columnconfigure(0, weight=1)
+        heading = tk.Frame(header, bg="#152742")
+        heading.grid(row=0, column=0, sticky="nw")
+        tk.Label(heading, text="小黑的永恆插件更新器", bg="#152742", fg="white",
                  font=("Microsoft JhengHei UI", 19, "bold")).pack(anchor="w")
         self.client_text = tk.StringVar()
         self.update_client_text()
-        tk.Label(header, textvariable=self.client_text,
+        tk.Label(heading, textvariable=self.client_text,
                  bg="#152742", fg="#d4e3f7", font=("Microsoft JhengHei UI", 10)).pack(anchor="w", pady=(4, 0))
+        notice = tk.Frame(header, bg="#152742")
+        notice.grid(row=0, column=1, sticky="ne", padx=(20, 0))
+        tk.Label(notice, text="免責聲明", bg="#152742", fg="#f0d7ac",
+                 font=("Microsoft JhengHei UI", 10, "bold")).pack(anchor="e")
+        tk.Label(notice, text="插件皆由各原作者製作，並非本人開發。\n本人僅整理懶人包，方便下載與更新；本工具非官方提供。",
+                 bg="#152742", fg="#d4e3f7", justify="right",
+                 font=("Microsoft JhengHei UI", 9)).pack(anchor="e", pady=(2, 3))
+        self.website_link = tk.Label(notice, text=PROJECT_URL, bg="#152742", fg="#a8d2ff",
+                                    cursor="hand2", takefocus=True,
+                                    font=("Microsoft JhengHei UI", 9, "underline"))
+        self.website_link.pack(anchor="e")
+        for event in ("<Button-1>", "<Return>", "<space>"):
+            self.website_link.bind(event, self.open_project_page)
 
         location = tk.Frame(root, bg="#f0f3f8", padx=19, pady=10)
         location.pack(fill="x")
@@ -131,6 +149,9 @@ class UpdaterWindow:
             except Exception as exc:
                 self.events.put(("app_status", (None, process_error(exc))))
         threading.Thread(target=worker, daemon=True).start()
+
+    def open_project_page(self, _event=None):
+        webbrowser.open(PROJECT_URL)
 
     def update_program(self):
         if self.busy or self.app_update is None:
