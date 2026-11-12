@@ -3,7 +3,7 @@
 替《魔獸世界：永恆》安裝、更新整合插件，保留可合併的繁中與本機修改。
 
 從 [最新版本](https://github.com/littleblackmann/wow-forever-addon-updater/releases/latest) 下載
-`XiaoHeiForeverUpdater-v1.1.2.zip`（或後續新版 ZIP），解壓到桌面等可寫入的資料夾，開啟 exe。
+`XiaoHeiForeverUpdater-v1.1.3.zip`（或後續新版 ZIP），解壓到桌面等可寫入的資料夾，開啟 exe。
 不需要另外安裝 Python 或 Git。
 
 1. 按「選擇資料夾」，選裡面有 `_forever_` 的 `World of Warcraft` 資料夾。
@@ -31,3 +31,5 @@ v1.1.1修正管理器更新後的自動重開；從v1.1.0第一次升級若沒�
 維護與發布步驟見 [發布說明](發布說明.md)。
 
 重新解壓管理器、或接手已裝插件的遊戲時，v1.1.2會從作者來源補取與本機現有版本一致的舊版原版ZIP，驗證後再保留修改升級。找不到可信舊版或驗證失敗會保留現況，不把本機檔案當原版。
+
+v1.1.3為GitHub版本資料加上5分鐘快取；達到API額度上限時遵守重試時間，改讀同一作者的官方發布頁，取得下載來源、精確大小與SHA256後照常驗證。release-cache只保存公開發行資料與冷卻時間，不包含帳密或金鑰，不需登入。

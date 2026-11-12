@@ -38,7 +38,11 @@ class InstallTests(unittest.TestCase):
         contents.update(extra or {})
         stream = BytesIO()
         with zipfile.ZipFile(stream, "w", zipfile.ZIP_DEFLATED) as z:
-            for name, data in contents.items(): z.writestr(name, data)
+            for name, data in contents.items():
+                # Repeated fixture builds must not look like author repacks
+                # merely because the wall clock crossed a ZIP timestamp tick.
+                z.writestr(zipfile.ZipInfo(name, date_time=(2020, 1, 1, 0, 0, 0)),
+                           data, compress_type=zipfile.ZIP_DEFLATED)
         raw = stream.getvalue()
         return raw, u.Release(version, "https://example.invalid/official.zip", len(raw), "sha256:" + hashlib.sha256(raw).hexdigest())
 
@@ -152,6 +156,16 @@ class InstallTests(unittest.TestCase):
     def test_excluded_addons_not_planned(self):
         names = {p.anchor for p in u.PACKAGES}
         self.assertTrue(names.isdisjoint({'RXPGuides', 'AmobiCompanion', 'ForeverQuestPins'}))
+
+    def test_newer_local_version_is_not_downgraded_by_stale_author_metadata(self):
+        raw, release = self.archive('1.1')
+        self.run_sample(True, raw, release)
+        before = u.read_live(self.addons, self.pkg.managed_folders)
+        old, older_release = self.archive('1.0')
+        result, rows = self.run_sample(True, old, older_release)
+        self.assertEqual(result[0], 0)
+        self.assertEqual(rows[0][-1], '保留較新本機版本')
+        self.assertEqual(u.read_live(self.addons, self.pkg.managed_folders), before)
 
     def test_windows_duplicated_cr_does_not_block_localized_version_update(self):
         base=b'## Title: Test\n## Notes: Original\n## Version: 1.0\n'

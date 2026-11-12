@@ -74,6 +74,17 @@ class RecoveryTests(unittest.TestCase):
 
 
 class HistoricalSourceTests(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+        from pathlib import Path
+        self.temp = tempfile.TemporaryDirectory()
+        self.cache_patch = patch.object(u, 'APP', Path(self.temp.name))
+        self.cache_patch.start()
+
+    def tearDown(self):
+        self.cache_patch.stop()
+        self.temp.cleanup()
+
     def test_curseforge_selects_exact_stable_version_and_client(self):
         pkg = u.Package('sample', 'Sample', 'Sample', '123/sample', r'Sample-(\d+\.\d+)\.zip')
         def row(ident, version, client='1.60.1', kind='release'):

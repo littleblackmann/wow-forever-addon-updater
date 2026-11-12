@@ -235,6 +235,24 @@ class Release:
     digest: str = ""
 
 
+def head_size(url: str) -> int:
+    if not trusted_url(url):
+        raise SkipUpdate("下載來源不在允許清單。")
+    opener = urllib.request.build_opener(VerifiedRedirect())
+    req = urllib.request.Request(url, method='HEAD', headers={'User-Agent':'ForeverAddonUpdater/1.0'})
+    with opener.open(req, timeout=18) as response:
+        size = int(response.headers.get('Content-Length', '0'))
+    if not 0 < size <= MAX_ZIP:
+        raise SkipUpdate("官方下載檔未提供有效大小，已保留現況。")
+    return size
+
+
+def github_release_data(repository: str, selector='latest', version_hint=None):
+    import github_source
+    return github_source.release_data(repository, selector, fetch, head_size,
+                                      APP/'release-cache', version_hint)
+
+
 def find_release(pkg: Package, patch: str, version: str | None = None) -> Release:
     version = version_name(version) if version is not None else None
     owner, project = pkg.source.split("/", 1)
@@ -261,8 +279,8 @@ def find_release(pkg: Package, patch: str, version: str | None = None) -> Releas
         # Recover its exact original from author releases instead of guessing
         # that the installed (possibly translated) files are pristine.
         for page in range(1, 6) if version is not None else (1,):
-            suffix = f"?per_page=100&page={page}" if version is not None else "/latest"
-            data = json.loads(fetch(f"https://api.github.com/repos/{pkg.source}/releases{suffix}", 6 * 1024**2))
+            selector = f"?per_page=100&page={page}" if version is not None else "latest"
+            data = github_release_data(pkg.source, selector, version)
             releases = data if version is not None else [data]
             if not isinstance(releases, list):
                 raise SkipUpdate("作者發行清單格式無效。")
@@ -582,6 +600,9 @@ def install_package(pkg: Package, release: Release, addons: Path, folders: tuple
 
 def process_error(exc: Exception) -> str:
     if isinstance(exc, urllib.error.HTTPError):
+        import github_source
+        if github_source.quota_error(exc):
+            return "GitHub 查詢暫時達到額度上限，已保留插件；請稍後再試。"
         return f"來源目前無法讀取（HTTP {exc.code}）"
     return str(exc)
 

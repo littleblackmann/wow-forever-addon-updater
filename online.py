@@ -11,7 +11,7 @@ import uuid
 
 import updater as u
 
-APP_VERSION = "1.1.2"
+APP_VERSION = "1.1.3"
 CATALOG_MIN_APP = "1.1.0"
 REPOSITORY = "littleblackmann/wow-forever-addon-updater"
 CACHE = u.APP / "online"
@@ -29,7 +29,7 @@ class Catalog:
 
 def release(tag: str | None = None):
     suffix = f"tags/{tag}" if tag else "latest"
-    data = json.loads(u.fetch(f"https://api.github.com/repos/{REPOSITORY}/releases/{suffix}", 2 * 1024**2))
+    data = u.github_release_data(REPOSITORY, suffix)
     if data.get("draft") or data.get("prerelease") or not re.fullmatch(r"[A-Za-z0-9._-]+", data.get("tag_name", "")):
         raise u.SkipUpdate("線上發行版本資料無效")
     if tag and data["tag_name"] != tag:
