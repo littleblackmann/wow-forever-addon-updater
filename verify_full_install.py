@@ -3,6 +3,7 @@ from pathlib import Path
 import json
 import tempfile
 import sys
+import shutil
 from unittest.mock import patch
 
 import updater as u
@@ -24,7 +25,21 @@ def main():
             reports.append(row)
             print(' | '.join(row), flush=True)
         baseline = root / 'baselines'
+        if '--existing' in sys.argv:
+            addons.mkdir(parents=True)
+            baseline.mkdir()
+            for folder in (*live_folders, 'XiaoHeiAddonHub'):
+                shutil.copytree(u.ADDONS / folder, addons / folder)
+            for pkg in u.PACKAGES:
+                version = u.installed_version(u.ADDONS, pkg)
+                name = f'{pkg.key}-{version}.zip'
+                shutil.copy2(u.BASELINES / name, baseline / name)
         args = dict(game=game, backups=root/'backups', baselines=baseline, running=lambda: False)
+        if '--online-catalog' in sys.argv:
+            import online
+            catalog = online.sync_catalog()
+            assert catalog.identity is not None, catalog.note
+            args['catalog'] = catalog
         # With --cached, use the previously verified original ZIPs as fixture downloads.
         if '--cached' in sys.argv:
             releases, downloads = {}, {}
@@ -38,7 +53,9 @@ def main():
                     patch.object(u, 'fetch', side_effect=lambda url, _: downloads[url]):
                 result = u.run_updates(True, report, **args)
         else:
-            result = u.run_updates(True, report, **args)
+            # Retain temporary old fixtures inside this test, not in the user's Recycle Bin.
+            with patch.object(u, 'recycle_completed_file'):
+                result = u.run_updates(True, report, **args)
         assert result == (16, 16, 0), (result, reports)
         assert not (addons / 'RXPGuides').exists()
         assert not (addons / 'ForeverQuestPins').exists()
