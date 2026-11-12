@@ -9,6 +9,8 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 import online
 import self_update
+import theme
+from chrome import WindowChrome
 
 from updater import (APP, RESOURCES, backup_location, client_patch, process_error,
                      remember_game, remembered_game, resolve_game, run_updates)
@@ -28,100 +30,44 @@ class UpdaterWindow:
         root.title("小黑的永恆插件更新器")
         if APP_ICON.is_file():
             root.iconbitmap(str(APP_ICON))
-        root.geometry("1040x740")
-        root.minsize(850, 600)
-        root.configure(bg="#f0f3f8")
+        root.geometry("1160x940")
+        root.minsize(960, 740)
+        root.configure(bg=theme.BG)
         root.protocol("WM_DELETE_WINDOW", self.close)
-
-        style = ttk.Style(root)
-        style.theme_use("clam")
-        style.configure("Treeview", font=("Microsoft JhengHei UI", 10), rowheight=30,
-                        background="white", foreground="#152235", fieldbackground="white")
-        style.configure("Treeview.Heading", font=("Microsoft JhengHei UI", 10, "bold"),
-                        background="#e4eaf3", foreground="#203452", padding=(7, 6))
-        style.map("Treeview", background=[("selected", "#dbeafe")], foreground=[("selected", "#102a43")])
-        style.configure("Primary.TButton", font=("Microsoft JhengHei UI", 12, "bold"),
-                        background="#235dc5", foreground="white", padding=(16, 9), borderwidth=0)
-        style.map("Primary.TButton", background=[("disabled", "#9aaecb"), ("active", "#194a9f")])
-        style.configure("TButton", font=("Microsoft JhengHei UI", 10), padding=(11, 7))
-
-        header = tk.Frame(root, bg="#152742", padx=23, pady=16)
-        header.pack(fill="x")
-        header.columnconfigure(0, weight=1)
-        heading = tk.Frame(header, bg="#152742")
-        heading.grid(row=0, column=0, sticky="nw")
-        tk.Label(heading, text="小黑的永恆插件更新器", bg="#152742", fg="white",
-                 font=("Microsoft JhengHei UI", 19, "bold")).pack(anchor="w")
+        self.theme = theme.Theme(root, RESOURCES)
+        self.surface = theme.StoneCanvas(root, self.theme)
+        self.surface.pack(fill="both", expand=True)
+        self.chrome=WindowChrome(root,caption_height=148)
+        self.chrome.attach(self.surface)
+        self.caption_buttons=[theme.CaptionButton(self.surface,text=text,command=command,close=text=="×")
+                              for text,command in (("—",self.chrome.minimize),("□",self.chrome.maximize),("×",self.close))]
         self.client_text = tk.StringVar()
         self.update_client_text()
-        tk.Label(heading, textvariable=self.client_text,
-                 bg="#152742", fg="#d4e3f7", font=("Microsoft JhengHei UI", 10)).pack(anchor="w", pady=(4, 0))
-        notice = tk.Frame(header, bg="#152742")
-        notice.grid(row=0, column=1, sticky="ne", padx=(20, 0))
-        tk.Label(notice, text="免責聲明", bg="#152742", fg="#f0d7ac",
-                 font=("Microsoft JhengHei UI", 10, "bold")).pack(anchor="e")
-        tk.Label(notice, text="插件皆由各原作者製作，並非本人開發。\n本人僅整理懶人包，方便下載與更新；本工具非官方提供。",
-                 bg="#152742", fg="#d4e3f7", justify="right",
-                 font=("Microsoft JhengHei UI", 9)).pack(anchor="e", pady=(2, 3))
-        self.website_link = tk.Label(notice, text=PROJECT_URL, bg="#152742", fg="#a8d2ff",
-                                    cursor="hand2", takefocus=True,
-                                    font=("Microsoft JhengHei UI", 9, "underline"))
-        self.website_link.pack(anchor="e")
-        for event in ("<Button-1>", "<Return>", "<space>"):
-            self.website_link.bind(event, self.open_project_page)
-
-        location = tk.Frame(root, bg="#f0f3f8", padx=19, pady=10)
-        location.pack(fill="x")
-        tk.Label(location, text="遊戲位置", bg="#f0f3f8", fg="#203452",
-                 font=("Microsoft JhengHei UI", 10)).pack(side="left", padx=(0, 10))
+        self.disclaimer_button = ttk.Button(self.surface, text="免責聲明", style="Metal.TButton", command=self.show_disclaimer)
         self.game_text = tk.StringVar(value=str(self.game))
-        self.path_entry = ttk.Entry(location, textvariable=self.game_text, state="readonly")
-        self.path_entry.pack(side="left", fill="x", expand=True)
-        self.folder_button = ttk.Button(location, text="選擇資料夾…", command=self.choose_folder)
-        self.folder_button.pack(side="left", padx=(10, 0))
-
-        guide = tk.Frame(root, bg="#f0f3f8", padx=19)
-        guide.pack(fill="x")
-        for text in (
-            "更新器放哪裡：解壓到桌面等可寫入的資料夾即可。",
-            "遊戲位置選哪裡：選「World of Warcraft」資料夾，裡面要看得到「_forever_」。",
-        ):
-            tk.Label(guide, text=text, bg="#f0f3f8", fg="#334a66",
-                     font=("Microsoft JhengHei UI", 10), anchor="w").pack(fill="x", pady=(0, 4))
-        destination = tk.Frame(guide, bg="#f0f3f8")
-        destination.pack(fill="x", pady=(3, 0))
-        tk.Label(destination, text="插件自動裝到", bg="#f0f3f8", fg="#203452",
-                 font=("Microsoft JhengHei UI", 10)).pack(side="left", padx=(0, 10))
+        self.path_entry = ttk.Entry(self.surface, textvariable=self.game_text, state="readonly",font=(theme.FONT,11))
+        self.folder_button = ttk.Button(self.surface, text="選擇資料夾…", style="Metal.TButton", command=self.choose_folder)
+        self.guide_button = ttk.Button(self.surface,text="安裝說明",style="Metal.TButton",command=self.show_guide)
         self.addons_text = tk.StringVar()
         self.update_install_text()
-        ttk.Entry(destination, textvariable=self.addons_text, state="readonly").pack(side="left", fill="x", expand=True)
-
-        tools = tk.Frame(root, bg="#f0f3f8", padx=19, pady=13)
-        tools.pack(fill="x")
-        self.update_button = ttk.Button(tools, text="一鍵更新遊戲插件", style="Primary.TButton", command=lambda: self.start(True))
-        self.check_button = ttk.Button(tools, text="只檢查", command=lambda: self.start(False))
-        self.update_button.pack(side="left")
-        self.check_button.pack(side="left", padx=8)
-        ttk.Button(tools, text="查看保留檔案", command=self.open_backups).pack(side="right")
-        self.program_button = ttk.Button(tools, text="更新管理器介面（UI）", command=self.update_program, state="disabled")
-        self.program_button.pack(side="right", padx=8)
-
+        self.destination_entry=ttk.Entry(self.surface,textvariable=self.addons_text,state="readonly",font=(theme.FONT,10))
+        self.update_button = ttk.Button(self.surface, text="一鍵更新遊戲插件", style="Primary.TButton", command=lambda: self.start(True))
+        self.check_button = ttk.Button(self.surface, text="只檢查", style="Metal.TButton", command=lambda: self.start(False))
+        self.backups_button=ttk.Button(self.surface, text="查看保留檔案",style="Metal.TButton",command=self.open_backups)
+        self.program_button = ttk.Button(self.surface, text="更新管理器介面（UI）",style="Metal.TButton",command=self.update_program,state="disabled")
         self.online_text = tk.StringVar(value=f"管理器介面 v{online.APP_VERSION}｜正在檢查介面版本…")
-        tk.Label(root, textvariable=self.online_text, bg="#f0f3f8", fg="#334a66",
-                 font=("Microsoft JhengHei UI", 10), anchor="w").pack(fill="x", padx=19, pady=(0, 6))
-        self.catalog_text = tk.StringVar(value="遊戲插件：按「一鍵更新遊戲插件」會同步整合清單，更新 AddOns 插件並補裝缺少的項目。")
-        tk.Label(root, textvariable=self.catalog_text, bg="#f0f3f8", fg="#334a66",
-                 font=("Microsoft JhengHei UI", 10), anchor="w", wraplength=800, justify="left").pack(fill="x", padx=19, pady=(0, 8))
-
-        body = tk.Frame(root, bg="#f0f3f8")
-        body.pack(fill="both", expand=True, padx=19)
+        self.catalog_text = tk.StringVar(value="按「一鍵更新遊戲插件」同步清單並補裝缺少的插件。")
+        self.body = body = tk.Frame(self.surface,bg=theme.BG)
         columns = ("addon", "local", "latest", "result")
-        self.table = ttk.Treeview(body, columns=columns, show="headings", selectmode="browse")
+        self.table = ttk.Treeview(body, columns=columns,displaycolumns=("local","latest","result"),show="tree headings",selectmode="browse")
+        self.table.heading("#0",text="插件",anchor="w")
+        self.table.column("#0",width=280,minwidth=230,stretch=False)
         for name, label, width, stretch in zip(columns, ("插件", "本機版本", "發布版本", "結果"),
-                                               (196, 94, 94, 458), (False, False, False, True)):
-            self.table.heading(name, text=label, anchor="w")
-            self.table.column(name, width=width, minwidth=75, stretch=stretch)
-        self.table.tag_configure("alt", background="#f7f9fc")
+                                               (0,124,124,460),(False,False,False,True)):
+            self.table.heading(name, text=label, anchor="center" if name in ("local","latest") else "w")
+            self.table.column(name, width=width, minwidth=0 if name=="addon" else 90, stretch=stretch,
+                              anchor="center" if name in ("local","latest") else "w")
+        self.table.tag_configure("alt", background="#302c23")
         scrollbar = ttk.Scrollbar(body, orient="vertical", command=self.table.yview)
         horizontal = ttk.Scrollbar(body, orient="horizontal", command=self.table.xview)
         self.table.configure(yscrollcommand=scrollbar.set, xscrollcommand=horizontal.set)
@@ -131,15 +77,100 @@ class UpdaterWindow:
         body.grid_rowconfigure(0, weight=1)
         body.grid_columnconfigure(0, weight=1)
         self.table.bind("<Double-1>", self.show_details)
-
-        foot = tk.Frame(root, bg="#f0f3f8", padx=20, pady=10)
-        foot.pack(fill="x")
-        self.status = tk.StringVar(value="先選遊戲位置並關閉遊戲，再按「一鍵更新遊戲插件」。管理器介面有新版時會另外提示。")
-        tk.Label(foot, textvariable=self.status, bg="#f0f3f8", fg="#334a66",
-                 font=("Microsoft JhengHei UI", 10), anchor="w").pack(side="left", fill="x", expand=True)
-        self.progress = ttk.Progressbar(foot, mode="indeterminate", length=120)
+        self.table.bind("<Return>",self.show_details)
+        self.status = tk.StringVar(value="準備就緒")
+        self.progress = ttk.Progressbar(self.surface, mode="indeterminate", length=120)
+        self._layout_pending=None
+        self._layout_size=None
+        self._text_items={}
+        self._text_variables={'client':self.client_text,'online':self.online_text,'catalog':self.catalog_text,'status':self.status}
+        self.surface.bind("<Configure>",self.request_layout)
+        for variable in (self.client_text,self.online_text,self.catalog_text,self.status):
+            variable.trace_add("write",self.refresh_text)
+        root.bind('<Alt-F4>',lambda e:self.close())
+        self.layout()
         root.after(100, self.poll)
         root.after(200, self.check_online)
+
+    def request_layout(self,event=None):
+        if event is not None and (event.width,event.height)==self._layout_size:
+            return
+        if self._layout_pending is None:
+            self._layout_pending=self.root.after(16,self.layout)
+
+    def refresh_text(self,*_):
+        for key,item in self._text_items.items():
+            self.surface.itemconfigure(item,text=self._text_variables[key].get())
+        if self.busy and self._layout_size:
+            w,h=self._layout_size
+            self.progress.place(x=w-280,y=h-27,width=120,height=6)
+        else:
+            self.progress.place_forget()
+
+    def layout(self):
+        self._layout_pending=None
+        c=self.surface
+        w=max(960,c.winfo_width());h=max(740,c.winfo_height())
+        if (w,h)==self._layout_size:
+            self.refresh_text()
+            return
+        self._layout_size=(w,h)
+        c.delete("decoration")
+        self._text_items.clear()
+        c.material(w,h)
+        c.frame(6,6,w-12,h-12)
+        def text(x,y,value,size=10,color=theme.INK,**kw):
+            return c.create_text(x,y,text=value,fill=color,font=(theme.FONT,size),anchor="nw",tags="decoration",**kw)
+        c.create_rectangle(10,10,w-10,40,fill="#2d2a23",outline=theme.LINE,tags="decoration")
+        if not hasattr(self,'caption_icon'):
+            icon=tk.PhotoImage(master=self.root,file=str(RESOURCES/'圖示'/'WoW-Forever.png'))
+            self.caption_icon=icon.subsample(max(1,(icon.width()+19)//20))
+        c.create_image(26,25,image=self.caption_icon,tags='decoration')
+        text(43,15,"小黑的永恆插件更新器",10,theme.INK)
+        for i,button in enumerate(self.caption_buttons):
+            button.place(x=w-148+i*45,y=10,width=42,height=29)
+        c.create_text(32,68,text="小黑的永恆插件更新器",fill=theme.GOLD,
+                      font=(theme.TITLE_FONT,28,"bold"),anchor="nw",tags="decoration")
+        self._text_items['client']=text(36,116,self.client_text.get(),11)
+        def place(widget,x,y,width,height):
+            widget.place(x=x,y=y+40,width=width,height=height)
+        place(self.disclaimer_button,w-151,35,117,44)
+        c.create_line(27,148,w-27,148,fill=theme.LINE,tags="decoration")
+        c.frame(27,169,w-54,121)
+        text(47,193,"遊戲位置",12,theme.GOLD)
+        place(self.path_entry,163,143,w-370,40)
+        place(self.folder_button,w-194,142,146,43)
+        text(47,247,"插件安裝位置",11)
+        place(self.destination_entry,163,197,w-370,34)
+        place(self.guide_button,w-194,194,146,43)
+        place(self.update_button,29,270,234,50)
+        place(self.check_button,275,270,105,50)
+        place(self.program_button,w-399,273,211,46)
+        place(self.backups_button,w-176,273,147,46)
+        self._text_items['online']=text(32,376,self.online_text.get(),10,theme.MUTED,width=w-64)
+        self._text_items['catalog']=text(32,402,self.catalog_text.get(),10,theme.MUTED,width=w-64)
+        c.frame(27,433,w-54,h-502)
+        place(self.body,33,399,w-66,h-514)
+        c.create_line(27,h-56,w-27,h-56,fill=theme.LINE,tags="decoration")
+        self._text_items['status']=text(32,h-43,self.status.get(),10,theme.GOLD,width=w-300)
+        c.create_text(w-32,h-43,text="更新前請先關閉遊戲",fill=theme.MUTED,
+                      font=(theme.FONT,10),anchor="ne",tags="decoration")
+        if self.busy:
+            self.progress.place(x=w-280,y=h-27,width=120,height=6)
+
+    def show_disclaimer(self):
+        return theme.dialog(self.root,self.theme,"免責聲明",
+            "Questie、AtlasLoot、DBM 等插件皆由各原作者製作，並非本人開發。\n\n"
+            "本人僅整理成方便下載、安裝與更新的非官方懶人包，並提供部分繁中內容。"
+            "插件與相關內容的權利歸各原作者所有。",self.open_project_page)
+
+    def show_guide(self):
+        return theme.dialog(self.root,self.theme,"安裝說明",
+            "1. 將更新器完整解壓到桌面等可寫入的位置。\n"
+            "2. 選擇裡面有 _forever_ 的 World of Warcraft 資料夾。\n"
+            "3. 確認插件安裝位置，可先按「只檢查」。\n"
+            "4. 完全退出遊戲，再按「一鍵更新遊戲插件」。\n"
+            "5. 完成後查看結果，再重新開啟遊戲。")
 
     def check_online(self):
         def worker():
@@ -220,7 +251,7 @@ class UpdaterWindow:
         self.status.set("正在檢查並安裝更新…" if apply else "正在查詢發布版本…")
         for button in (self.update_button, self.check_button, self.folder_button, self.program_button):
             button.state(["disabled"])
-        self.progress.pack(side="right")
+        self.request_layout()
         self.progress.start(12)
 
         def worker():
@@ -259,11 +290,11 @@ class UpdaterWindow:
                     return
                 if kind == "row":
                     stripe = ("alt",) if len(self.table.get_children()) % 2 else ()
-                    self.table.insert("", "end", values=value, tags=stripe)
+                    self.table.insert("", "end",text="  "+str(value[0]),image=self.theme.badge(str(value[0])),values=value,tags=stripe)
                     continue
                 self.busy = False
                 self.progress.stop()
-                self.progress.pack_forget()
+                self.progress.place_forget()
                 for button in (self.update_button, self.check_button, self.folder_button, self.program_button):
                     button.state(["!disabled"])
                 if self.app_update is None:
@@ -278,7 +309,7 @@ class UpdaterWindow:
         self.root.after(100, self.poll)
 
     def show_details(self, event):
-        item = self.table.identify_row(event.y)
+        item = self.table.focus() if event.keysym=="Return" else self.table.identify_row(event.y)
         if item:
             name, current, latest, status = self.table.item(item, "values")
             messagebox.showinfo(name, f"本機 {current}　發布 {latest}\n\n{status}", parent=self.root)

@@ -1,6 +1,7 @@
 # 小黑的永恆插件管理器
 
 方便安裝與更新《魔獸世界：永恆》插件的 Windows 懶人包。
+採用黑灰石紋、金屬框與金色標題的魔獸風格介面，讓遊戲位置、更新操作與插件版本一眼看清楚。
 清單內的插件由各原作者製作，並非本人開發；本人僅整理安裝更新流程與部分繁中內容。本工具非官方提供。
 
 [下載與圖文介紹](https://littleblackmann.github.io/projects/forever-addon-manager.html) · [GitHub 最新發行版](https://github.com/littleblackmann/wow-forever-addon-updater/releases/latest)

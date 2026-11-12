@@ -136,8 +136,10 @@ class OnlineTests(unittest.TestCase):
         self.assertEqual(state['sample'], one.identity)
 
     def test_app_version_check_and_download_validation(self):
-        data = {'tag_name': 'v1.2.0', 'assets': [{'name': 'XiaoHeiForeverUpdater.exe', 'size': 10,
-                'browser_download_url': f'https://github.com/{o.REPOSITORY}/releases/download/v1.2.0/XiaoHeiForeverUpdater.exe',
+        major, minor, patch_version = o.app_order(o.APP_VERSION)
+        next_version = f'{major}.{minor}.{patch_version+1}'
+        data = {'tag_name': 'v'+next_version, 'assets': [{'name': 'XiaoHeiForeverUpdater.exe', 'size': 10,
+                'browser_download_url': f'https://github.com/{o.REPOSITORY}/releases/download/v{next_version}/XiaoHeiForeverUpdater.exe',
                 'digest': 'sha256:' + hashlib.sha256(b'MZnew app!').hexdigest()}]}
         with patch.object(o, 'release', return_value=data): info = o.check_app()
         with patch.object(u, 'APP', self.f.root), patch.object(u, 'fetch', return_value=b'MZnew app!'):

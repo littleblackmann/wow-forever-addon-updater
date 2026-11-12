@@ -1,4 +1,5 @@
 from pathlib import Path
+import gc
 import tempfile
 import time
 import tkinter as tk
@@ -21,7 +22,13 @@ class WindowTests(unittest.TestCase):
         self.app = ui.UpdaterWindow(self.root)
 
     def tearDown(self):
+        for callback in self.root.tk.call('after', 'info'):
+            self.root.after_cancel(callback)
+        self.root.update_idletasks()
         self.root.destroy()
+        self.app = None
+        self.root = None
+        gc.collect()
         self.tmp.cleanup()
 
     def test_folder_picker_normalizes_and_remembers(self):
@@ -54,6 +61,24 @@ class WindowTests(unittest.TestCase):
             self.assertNotIn('disabled', self.app.folder_button.state())
             self.assertEqual(run.call_args.kwargs['game'], self.game)
             self.assertFalse(run.call_args.args[0])
+
+    def test_info_window_does_not_grab_main_or_create_duplicate_windows(self):
+        popup = self.app.show_disclaimer()
+        try:
+            self.assertIsNone(self.root.grab_current())
+            self.assertIs(self.app.show_disclaimer(), popup)
+            with patch.object(self.root, 'destroy') as close:
+                self.app.close()
+                close.assert_called_once_with()
+        finally:
+            popup.destroy()
+
+    def test_status_updates_keep_existing_canvas_and_background(self):
+        items = self.app.surface.find_all()
+        for index in range(20):
+            self.app.status.set(f'Progress {index}')
+        self.assertEqual(self.app.surface.find_all(), items)
+        self.assertEqual(self.app.surface.itemcget(self.app._text_items['status'], 'text'), 'Progress 19')
 
 
 if __name__ == '__main__':
