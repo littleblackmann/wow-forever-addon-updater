@@ -1,0 +1,83 @@
+{
+  "lueur": {
+    "version": "1.7.0",
+    "files": [
+      "Lueur/Locales/zhTW.lua",
+      "Lueur/Lueur.toc"
+    ]
+  },
+  "atlasloot": {
+    "version": "1.3.7",
+    "files": [
+      "AtlasBIStooltips/AtlasBIStooltips.lua",
+      "AtlasBIStooltips/AtlasBIStooltips.toc",
+      "AtlasLootClassic/AtlasLoot_BiS_GUI.lua",
+      "AtlasLootClassic/favlistframe.lua",
+      "AtlasLootClassic/GUI/GUI.lua",
+      "AtlasLootClassic/Locales/constants.tw.lua",
+      "AtlasLootClassic_Collections/Locales/constants.tw.lua",
+      "AtlasLootClassic_Crafting/Locales/constants.tw.lua",
+      "AtlasLootClassic_DungeonsAndRaids/data.lua",
+      "AtlasLootClassic_DungeonsAndRaids/Locales/constants.tw.lua",
+      "AtlasLootClassic_Options/Locales/constants.tw.lua"
+    ]
+  },
+  "bbf": {
+    "version": "2.2.0i",
+    "files": [
+      "BetterBlizzFrames/BetterBlizzFrames.toc",
+      "BetterBlizzFrames/BetterBlizzFrames_Camelot.toc"
+    ]
+  },
+  "sparkles": {
+    "version": "2.0.0",
+    "files": [
+      "ForeverLootSparkles/ForeverLootSparkles.lua",
+      "ForeverLootSparkles/ForeverLootSparkles.toc"
+    ]
+  },
+  "shortest": {
+    "version": "1.33.1",
+    "files": [
+      "ShortestPathForever/ShortestPathForever.toc"
+    ]
+  },
+  "leatrix": {
+    "version": "1.60.30",
+    "files": [
+      "Leatrix_Maps/Leatrix_Maps.toc"
+    ]
+  },
+  "zone": {
+    "version": "1.10.1",
+    "files": [
+      "ZoneInfoForever/Locales.lua",
+      "ZoneInfoForever/ZoneInfoForever.lua",
+      "ZoneInfoForever/ZoneInfoForever.toc"
+    ]
+  },
+  "drawer": {
+    "version": "1.4.1",
+    "files": [
+      "MinimapButtonDrawer/Core.lua",
+      "MinimapButtonDrawer/MinimapButtonDrawer.toc",
+      "MinimapButtonDrawer/MinimapButtonDrawer_Forever.toc",
+      "MinimapButtonDrawer/Options.lua"
+    ]
+  },
+  "training": {
+    "version": "1.1.1",
+    "files": [
+      "WhatsTraining/Locale.lua",
+      "WhatsTraining/WhatsTraining.toc"
+    ]
+  },
+  "dbm": {
+    "version": "12.1.20",
+    "files": [
+      "DBM-Core/localization.tw.lua",
+      "DBM-GUI/localization.tw.lua",
+      "DBM-GUI/modules/PanelPrototype.lua"
+    ]
+  }
+}

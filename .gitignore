@@ -1,0 +1,10 @@
+baselines/
+clients/
+online/
+.updates/
+settings.json
+__pycache__/
+*.exe
+*.spec
+build/
+dist/
