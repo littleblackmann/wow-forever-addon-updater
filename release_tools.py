@@ -55,6 +55,16 @@ def prepare(output: Path, executable: Path | None, catalog_only: bool = False):
         with zipfile.ZipFile(share) as z:
             assert z.testzip() is None
         assets = [output / 'XiaoHeiForeverUpdater.exe', share]
+        # Copy this public descriptor to the website after verifying the uploaded
+        # release, so website visitors need not spend GitHub's shared API quota.
+        (output / 'website-release.json').write_text(json.dumps({
+            'repository': online.REPOSITORY, 'tag_name': 'v'+online.APP_VERSION,
+            'draft': False, 'prerelease': False, 'assets': [{
+                'name': share.name, 'state': 'uploaded', 'size': share.stat().st_size,
+                'digest': 'sha256:'+hashlib.sha256(share.read_bytes()).hexdigest(),
+                'browser_download_url': f'https://github.com/{online.REPOSITORY}/releases/download/v{online.APP_VERSION}/{share.name}',
+            }],
+        }, ensure_ascii=False, indent=2), encoding='utf-8')
         (output / 'CATALOG-SHA256SUMS').write_text(''.join(
             hashlib.sha256(p.read_bytes()).hexdigest() + '  ' + p.name + '\n'
             for p in catalog_assets), encoding='ascii')
