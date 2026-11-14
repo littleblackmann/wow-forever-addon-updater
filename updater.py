@@ -22,6 +22,7 @@ from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path, PurePosixPath
+from typing import Callable
 
 
 APP = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
@@ -477,8 +478,34 @@ def customize_package(pkg: Package, upstream, temp: Path, folders: tuple[str, ..
     return result
 
 
+def recognized_package(pkg: Package, original, live, temp: Path, folders: tuple[str, ...], customizations: Path):
+    """Recognize known translated files, leaving unrelated personal files for merging."""
+    base_zip, local_zip = (customizations / pkg.key / f"{label}.zip" for label in ("base", "local"))
+    if not base_zip.is_file() or not local_zip.is_file():
+        return None
+    try:
+        expected = customize_package(pkg, original, temp, folders, customizations)
+    except SkipUpdate:
+        # A current translation may not apply backwards to an older author file.
+        # This is only recognition; the desired package is still validated later.
+        return None
+    touched = set(read_zip(base_zip, folders)) | set(read_zip(local_zip, folders))
+    for key in touched:
+        left, right = live.get(key), expected.get(key)
+        if left is None or right is None:
+            if left is not right:
+                return None
+        elif left[1] != right[1]:
+            try:
+                if normalized_text(left[1]) != normalized_text(right[1]):
+                    return None
+            except UnicodeError:
+                return None
+    return expected if touched else None
+
+
 def previous_package(pkg: Package, original, live, temp: Path, folders: tuple[str, ...],
-                     customizations: Path, previous_customizations: Path | None):
+                     customizations: Path, previous_customizations: Path | Callable[[], Path] | None):
     """Recognize a shipped historical translation only from its exact live files.
 
     A fresh portable manager has no catalog state; a manually upgraded client may
@@ -486,6 +513,9 @@ def previous_package(pkg: Package, original, live, temp: Path, folders: tuple[st
     to an older author database in either case. Unrecognized edits still use the
     normal conservative merge and are never overwritten by this recovery path.
     """
+    recognized = recognized_package(pkg, original, live, temp, folders, customizations)
+    if recognized is not None:
+        return recognized
     toc = next((original.get(f"{pkg.anchor}/{name}".casefold()) for name in toc_names(pkg.anchor)
                 if f"{pkg.anchor}/{name}".casefold() in original), None)
     version = version_name(toc_fields(toc[1]).get("Version", "")) if toc else ""
@@ -516,9 +546,10 @@ def previous_package(pkg: Package, original, live, temp: Path, folders: tuple[st
                     return False
             if touched and all(same(key) for key in touched):
                 return expected
-    if live == original:
+    if original and all(k in live and live[k][1] == value[1] for k, value in original.items()):
         return original
-    return customize_package(pkg, original, temp, folders, previous_customizations)
+    previous_root = previous_customizations() if callable(previous_customizations) else previous_customizations
+    return customize_package(pkg, original, temp, folders, previous_root)
 
 
 def validate_dependencies(files, addons: Path, folders: tuple[str, ...]):
@@ -606,13 +637,15 @@ def install_package(pkg: Package, release: Release, addons: Path, folders: tuple
         else:
             merged, count = customize_package(pkg, upstream, work, folders, customizations), 0
         validate_package(merged, pkg, folders, interface, release.version)
+        unchanged = current_version == release.version and existing == folders and merged == live
         prepared = work / "new"
-        for relative, content in merged.values():
-            out = prepared / relative
-            out.parent.mkdir(parents=True, exist_ok=True)
-            out.write_bytes(content)
-        if read_live(prepared, folders) != merged:
-            raise SkipUpdate("更新暫存檔與預期內容不符。")
+        if not unchanged:
+            for relative, content in merged.values():
+                out = prepared / relative
+                out.parent.mkdir(parents=True, exist_ok=True)
+                out.write_bytes(content)
+            if read_live(prepared, folders) != merged:
+                raise SkipUpdate("更新暫存檔與預期內容不符。")
         new_zip = baselines / f"{pkg.key}-{release.version}.zip"
         if new_zip.exists():
             assert_plain(new_zip)
@@ -626,6 +659,9 @@ def install_package(pkg: Package, release: Release, addons: Path, folders: tuple
             pending_zip = new_zip.with_name(f".{uuid.uuid4().hex}.tmp")
             pending_zip.write_bytes(raw)
             pending_zip.rename(new_zip)
+
+        if unchanged:
+            return None, count
 
         backup = backups / f"{stamp}-{pkg.key}-{current_version}-{uuid.uuid4().hex[:6]}" if existing else None
         if backup:
@@ -786,7 +822,7 @@ def update_packages(apply, report, addons, backups, baselines, running, patch, i
                     recover_baseline(pkg, current, patch, interface, existing, baselines)
                 backup, count = install_package(pkg, release, addons, folders, current, interface, backups, baselines, running,
                                                 catalog.customizations if catalog is not None else None,
-                                                previous(pkg.key) if catalog is not None and current else None)
+                                                (lambda key=pkg.key: previous(key)) if catalog is not None and current else None)
                 record(pkg.key)
                 updated += 1
                 retained = []
@@ -802,7 +838,8 @@ def update_packages(apply, report, addons, backups, baselines, running, patch, i
                     skipped += 1
                     result = f"已安裝／更新｜保留 {count} 個本機異動；無法回收，保留：{'、'.join(retained)}"
                 else:
-                    result = ("已安裝｜包含整合繁中" if not current else
+                    result = ("已是最新｜更新紀錄已同步" if current and backup is None else
+                              "已安裝｜包含整合繁中" if not current else
                               f"已更新／補齊｜保留 {count} 個本機異動；舊版已移至資源回收筒")
                 report(pkg.label, current or "未安裝", latest, result)
             except Exception as exc:

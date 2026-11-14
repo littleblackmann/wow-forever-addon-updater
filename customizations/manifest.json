@@ -21,7 +21,7 @@
     ]
   },
   "baganator": {
-    "version": "854",
+    "version": "855",
     "files": [
       "Baganator/Baganator.toc",
       "Baganator/XiaoHei_zhTW.lua"
@@ -79,7 +79,7 @@
     ]
   },
   "shortest": {
-    "version": "1.36.0",
+    "version": "1.37.0",
     "files": [
       "ShortestPathForever/ShortestPathForever.toc"
     ]
