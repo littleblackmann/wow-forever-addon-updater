@@ -1,4 +1,46 @@
 {
+  "platynator": {
+    "version": "545",
+    "files": [
+      "Platynator/Platynator.toc",
+      "Platynator/XiaoHei_zhTW.lua"
+    ]
+  },
+  "rarescanner": {
+    "version": "1.60.1.6",
+    "files": [
+      "RareScanner/RareScanner.toc",
+      "RareScanner/XiaoHei_zhTW.lua"
+    ]
+  },
+  "gathermate": {
+    "version": "1.52.7",
+    "files": [
+      "GatherMate2/GatherMate2.toc",
+      "GatherMate2/XiaoHei_zhTW.lua"
+    ]
+  },
+  "baganator": {
+    "version": "854",
+    "files": [
+      "Baganator/Baganator.toc",
+      "Baganator/XiaoHei_zhTW.lua"
+    ]
+  },
+  "auctionator": {
+    "version": "346",
+    "files": [
+      "Auctionator/Auctionator.toc",
+      "Auctionator/XiaoHei_zhTW.lua"
+    ]
+  },
+  "leatrixplus": {
+    "version": "1.60.30",
+    "files": [
+      "Leatrix_Plus/Leatrix_Plus.toc",
+      "Leatrix_Plus/XiaoHei_zhTW.lua"
+    ]
+  },
   "lueur": {
     "version": "1.7.0",
     "files": [
@@ -7,7 +49,7 @@
     ]
   },
   "atlasloot": {
-    "version": "1.3.7",
+    "version": "1.3.9",
     "files": [
       "AtlasBIStooltips/AtlasBIStooltips.lua",
       "AtlasBIStooltips/AtlasBIStooltips.toc",
@@ -23,7 +65,7 @@
     ]
   },
   "bbf": {
-    "version": "2.2.0i",
+    "version": "2.2.1b",
     "files": [
       "BetterBlizzFrames/BetterBlizzFrames.toc",
       "BetterBlizzFrames/BetterBlizzFrames_Camelot.toc"
@@ -37,19 +79,19 @@
     ]
   },
   "shortest": {
-    "version": "1.33.1",
+    "version": "1.36.0",
     "files": [
       "ShortestPathForever/ShortestPathForever.toc"
     ]
   },
   "leatrix": {
-    "version": "1.60.30",
+    "version": "1.60.31",
     "files": [
       "Leatrix_Maps/Leatrix_Maps.toc"
     ]
   },
   "zone": {
-    "version": "1.10.1",
+    "version": "1.10.2",
     "files": [
       "ZoneInfoForever/Locales.lua",
       "ZoneInfoForever/ZoneInfoForever.lua",
@@ -73,7 +115,7 @@
     ]
   },
   "dbm": {
-    "version": "12.1.20",
+    "version": "12.1.23",
     "files": [
       "DBM-Core/localization.tw.lua",
       "DBM-GUI/localization.tw.lua",

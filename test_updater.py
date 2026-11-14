@@ -178,5 +178,16 @@ class InstallTests(unittest.TestCase):
         self.assertNotIn(b'\r\r\n',result)
 
 
+class IntegerReleaseTests(unittest.TestCase):
+    def test_integer_release_order_and_invalid_versions(self):
+        self.assertEqual(u.version_name("v853"), "853")
+        self.assertGreater(u.version_order("853"), u.version_order("852"))
+        self.assertGreater(u.version_order("346"), u.version_order("345"))
+        self.assertEqual(u.version_order("r272"), ((272,), ""))
+        for bad in ("853-beta", "../853", "1.2.3.4.5", ""):
+            with self.assertRaises(u.SkipUpdate):
+                u.version_name(bad)
+
+
 if __name__ == '__main__':
     unittest.main()

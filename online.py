@@ -11,8 +11,8 @@ import uuid
 
 import updater as u
 
-APP_VERSION = "1.2.1"
-CATALOG_MIN_APP = "1.1.0"
+APP_VERSION = "1.2.2"
+CATALOG_MIN_APP = "1.2.2"
 REPOSITORY = "littleblackmann/wow-forever-addon-updater"
 CACHE = u.APP / "online"
 CATALOG_TAG = "catalog"
@@ -100,7 +100,7 @@ def parse_catalog(raw: bytes):
 
 def unpacked_files(archive: Path, packages):
     files = u.read_zip(archive, ("customizations",))
-    allowed = {"customizations/hub.zip", "customizations/manifest.json"}
+    allowed = {"customizations/hub.zip", "customizations/manifest.json", "customizations/history.zip"}
     allowed |= {f"customizations/{p.key}/{name}.zip" for p in packages for name in ("base", "local")}
     if not files or any(path not in allowed for path, _ in files.values()):
         raise u.SkipUpdate("整合檔包含不允許的內容")

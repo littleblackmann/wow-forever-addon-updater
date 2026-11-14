@@ -35,7 +35,7 @@ CUSTOMIZATIONS = RESOURCES / "customizations"
 MAX_ZIP = 150 * 1024**2
 MAX_UNPACKED = 400 * 1024**2
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-VERSION = r"(?:[vV]?\d+(?:\.\d+){1,3}[a-z]?|[rR]\d+)"
+VERSION = r"(?:[vV]?\d+(?:\.\d+){0,3}[a-z]?|[rR]\d+)"
 
 
 class SkipUpdate(Exception):
@@ -57,6 +57,15 @@ class Package:
 
 
 PACKAGES = (
+    Package("platynator", "怪物名條（Platynator）", "Platynator", "1361299/platynator", rf"Platynator-({VERSION})\.zip"),
+    Package("rarescanner", "稀有與寶箱提醒（RareScanner）", "RareScanner", "84208/rarescanner", rf"RareScanner_FOREVER_({VERSION})\.zip"),
+    Package("gathermate", "採集地點紀錄（GatherMate2）", "GatherMate2", "26120/gathermate2", rf"GatherMate2-({VERSION})\.zip"),
+    Package("syndicator", "背包物品資料庫（Syndicator）", "Syndicator", "988370/syndicator", rf"Syndicator-({VERSION})\.zip"),
+    Package("baganator", "背包整理（Baganator）", "Baganator", "914482/baganator", rf"Baganator-({VERSION})\.zip"),
+    Package("auctionator", "拍賣助手（Auctionator）", "Auctionator", "6124/auctionator", rf"Auctionator-({VERSION})\.zip"),
+    Package("leatrixplus", "便利功能（Leatrix Plus）", "Leatrix_Plus", "94855/leatrix-plus", rf"Leatrix_Plus-({VERSION})-forever\.zip"),
+    Package("quickchannels", "聊天頻道快捷列（QuickChannels）", "QuickChannels", "itsindolence/quickchannelswow",
+            rf"QuickChannels-v?({VERSION})\.zip"),
     Package("lueur", "Lueur", "Lueur", "1732324/lueur", rf"Lueur-({VERSION})\.zip"),
     Package("atlasloot", "AtlasLoot", "AtlasLootClassic", "1422985/atlasloot-forever",
             rf"AtlasLoot-Classic-Forever-({VERSION})-\d+-\d+\.zip",
@@ -171,7 +180,7 @@ def version_order(value: str):
     name = version_name(value)
     if name.startswith("r"):
         return (int(name[1:]),), ""
-    parts = re.fullmatch(r"(\d+(?:\.\d+){1,3})([a-z]?)", name)
+    parts = re.fullmatch(r"(\d+(?:\.\d+){0,3})([a-z]?)", name)
     return tuple(map(int, parts[1].split("."))), parts[2]
 
 
@@ -468,6 +477,50 @@ def customize_package(pkg: Package, upstream, temp: Path, folders: tuple[str, ..
     return result
 
 
+def previous_package(pkg: Package, original, live, temp: Path, folders: tuple[str, ...],
+                     customizations: Path, previous_customizations: Path | None):
+    """Recognize a shipped historical translation only from its exact live files.
+
+    A fresh portable manager has no catalog state; a manually upgraded client may
+    still name an older catalog. Never try to apply today's translation backwards
+    to an older author database in either case. Unrecognized edits still use the
+    normal conservative merge and are never overwritten by this recovery path.
+    """
+    toc = next((original.get(f"{pkg.anchor}/{name}".casefold()) for name in toc_names(pkg.anchor)
+                if f"{pkg.anchor}/{name}".casefold() in original), None)
+    version = version_name(toc_fields(toc[1]).get("Version", "")) if toc else ""
+    archive = customizations / "history.zip"
+    if version and archive.is_file():
+        name = f"{pkg.key}-{version}"
+        historical = read_zip(archive, (name,))
+        if historical:
+            root = temp / "history" / name
+            target = root / pkg.key
+            target.mkdir(parents=True)
+            for label in ("base", "local"):
+                item = historical.get(f"{name}/{label}.zip".casefold())
+                if item is None:
+                    raise SkipUpdate("舊版整合比對資料不完整，已保留現況。")
+                (target / f"{label}.zip").write_bytes(item[1])
+            expected = customize_package(pkg, original, temp, folders, root)
+            touched = set(read_zip(target / "base.zip", folders)) | set(read_zip(target / "local.zip", folders))
+            def same(key):
+                left, right = live.get(key), expected.get(key)
+                if left is None or right is None:
+                    return left is right
+                if left[1] == right[1]:
+                    return True
+                try:
+                    return normalized_text(left[1]) == normalized_text(right[1])
+                except UnicodeError:
+                    return False
+            if touched and all(same(key) for key in touched):
+                return expected
+    if live == original:
+        return original
+    return customize_package(pkg, original, temp, folders, previous_customizations)
+
+
 def validate_dependencies(files, addons: Path, folders: tuple[str, ...]):
     available = {n.casefold() for n in folders}
     for folder in folders:
@@ -544,7 +597,8 @@ def install_package(pkg: Package, release: Release, addons: Path, folders: tuple
             if not root_toc or version_name(toc_fields(root_toc[1]).get("Version", "")) != current_version:
                 raise SkipUpdate("原版 ZIP 與現有版本不相符。")
             if customizations is not None:
-                previous = customize_package(pkg, original, work, existing, previous_customizations)
+                previous = previous_package(pkg, original, live, work, existing,
+                                            customizations, previous_customizations)
                 desired = customize_package(pkg, upstream, work, folders, customizations)
                 merged, count = merge_files(previous, live, desired, work)
             else:
@@ -798,6 +852,31 @@ def install_hub(addons: Path, interface: str, running, customizations: Path | No
         if existing:
             previous_zip = (previous_customizations if previous_customizations is not None else CUSTOMIZATIONS) / "hub.zip"
             previous = read_zip(previous_zip, pkg.managed_folders)
+            # A newly extracted manager has no per-client catalog state. Recognize
+            # a known shipped hub before merging, otherwise today's bundled hub
+            # would become the comparison base and silently preserve the old hub.
+            live_toc = live.get("xiaoheiaddonhub/xiaoheiaddonhub.toc")
+            live_version = version_name(toc_fields(live_toc[1]).get("Version", "")) if live_toc else ""
+            history = (customizations if customizations is not None else CUSTOMIZATIONS) / "history.zip"
+            if live_version and history.is_file():
+                name = f"hub-{live_version}"
+                files_in_history = read_zip(history, (name,))
+                old_hub = files_in_history.get(f"{name}/hub.zip".casefold())
+                if old_hub is not None:
+                    candidate = staged / "previous-hub.zip"
+                    candidate.write_bytes(old_hub[1])
+                    known = read_zip(candidate, pkg.managed_folders)
+                    def same_hub_file(key, value):
+                        if key not in live:
+                            return False
+                        if live[key][1] == value[1]:
+                            return True
+                        try:
+                            return normalized_text(live[key][1]) == normalized_text(value[1])
+                        except UnicodeError:
+                            return False
+                    if known and all(same_hub_file(k, v) for k, v in known.items()):
+                        previous = known
             files, _ = merge_files(previous, live, files, staged)
             validate_package(files, pkg, pkg.managed_folders, interface, version)
         for relative, contents in files.values():

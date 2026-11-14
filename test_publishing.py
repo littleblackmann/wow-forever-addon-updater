@@ -53,7 +53,7 @@ class PublishingTests(unittest.TestCase):
         bundle=self.f.root/'bundle'
         with patch.object(u,'PACKAGES',(self.f.pkg,)):
             build_share.build_customizations(self.f.addons,self.f.baselines,bundle)
-            with patch.object(u,'CUSTOMIZATIONS',bundle),patch.object(online,'APP_VERSION','9.0.0'):
+            with patch.object(u,'CUSTOMIZATIONS',bundle),patch.object(online,'APP_VERSION','9.0.0'), patch.object(online,'CATALOG_MIN_APP','1.1.0'):
                 output=self.f.root/'catalog-release'
                 release_tools.prepare(output,None,catalog_only=True)
         catalog=json.loads((output/'catalog.json').read_text(encoding='utf-8'))

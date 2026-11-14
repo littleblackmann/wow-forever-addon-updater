@@ -4,6 +4,7 @@ import json
 import tempfile
 import uuid
 import zipfile
+import shutil
 
 import updater as u
 
@@ -15,6 +16,10 @@ def build_customizations(addons: Path = u.ADDONS, baselines: Path = u.BASELINES,
     with tempfile.TemporaryDirectory(prefix='.prepare-customizations-', dir=output.parent) as tmp:
         ready = Path(tmp) / 'ready'
         _write_customizations(addons, baselines, ready)
+        history = output / "history.zip"
+        if history.is_file():
+            u.assert_plain(history)
+            shutil.copy2(history, ready / "history.zip")
         previous = None
         if output.exists():
             u.assert_plain(output)
