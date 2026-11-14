@@ -5,6 +5,7 @@ online/
 .customization-build-backups/
 .prepare-customizations-*/
 settings.json
+notice-state.json
 __pycache__/
 *.exe
 *.spec

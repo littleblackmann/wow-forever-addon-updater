@@ -14,6 +14,8 @@ class PublishingTests(unittest.TestCase):
     def setUp(self):
         self.f=fixtures.InstallTests()
         self.f.setUp()
+        self.app_patch=patch.object(u,'APP',self.f.root)
+        self.app_patch.start()
         self.f.pkg=replace(self.f.pkg,archive=r'Sample-(\d+\.\d+)\.zip')
         raw, release=self.f.archive()
         self.f.run_sample(True,raw,release)
@@ -22,7 +24,9 @@ class PublishingTests(unittest.TestCase):
         (hub/'XiaoHeiAddonHub.toc').write_text('## Interface: 16001\n## Version: 0.1.11\nHub.lua\n')
         (hub/'Hub.lua').write_text('local value = 1\n')
 
-    def tearDown(self):self.f.tearDown()
+    def tearDown(self):
+        self.app_patch.stop()
+        self.f.tearDown()
 
     def test_rebuilding_removes_no_longer_needed_local_patch(self):
         target=self.f.addons/'Sample/main.lua'

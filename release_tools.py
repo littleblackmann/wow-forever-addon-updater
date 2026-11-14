@@ -11,6 +11,7 @@ import dis
 
 import updater as u
 import online
+import notices
 
 
 def embedded_version(executable: Path) -> str:
@@ -40,6 +41,11 @@ def prepare(output: Path, executable: Path | None, catalog_only: bool = False):
     catalog = {'schema': 1, 'revision': datetime.now().strftime('%Y.%m.%d.%H%M%S'),
                'minimum_app': online.CATALOG_MIN_APP, 'packages': [asdict(p) for p in u.PACKAGES],
                'customizations': {'name': payload.name, 'sha256': hashlib.sha256(payload.read_bytes()).hexdigest()}}
+    news_path = u.APP / '更新內容.json'
+    if news_path.is_file():
+        catalog['news'] = notices.validate_news(json.loads(news_path.read_text(encoding='utf-8')), u.PACKAGES)
+        if set(catalog['news']['descriptions']) != {p.key for p in u.PACKAGES}:
+            raise u.SkipUpdate('發布前請補齊所有插件的中文用途')
     raw = json.dumps(catalog, ensure_ascii=False, indent=2).encode('utf-8')
     online.parse_catalog(raw)
     online.unpacked_files(payload, u.PACKAGES)

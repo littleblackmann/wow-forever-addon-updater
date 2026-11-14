@@ -10,6 +10,8 @@ from tkinter import filedialog, messagebox, ttk
 import online
 import self_update
 import theme
+import notices
+import updater as u
 from chrome import WindowChrome
 
 from updater import (APP, RESOURCES, backup_location, client_patch, process_error,
@@ -26,6 +28,10 @@ class UpdaterWindow:
         self.events = queue.Queue()
         self.busy = False
         self.app_update = None
+        self.notice = None
+        self.notice_error = None
+        self._notice_popup = None
+        self._automatic_notice = None
         self.game = remembered_game()
         root.title("小黑的永恆插件更新器")
         if APP_ICON.is_file():
@@ -54,8 +60,9 @@ class UpdaterWindow:
         self.update_button = ttk.Button(self.surface, text="一鍵更新遊戲插件", style="Primary.TButton", command=lambda: self.start(True))
         self.check_button = ttk.Button(self.surface, text="只檢查", style="Metal.TButton", command=lambda: self.start(False))
         self.backups_button=ttk.Button(self.surface, text="查看保留檔案",style="Metal.TButton",command=self.open_backups)
-        self.program_button = ttk.Button(self.surface, text="更新管理器介面（UI）",style="Metal.TButton",command=self.update_program,state="disabled")
-        self.online_text = tk.StringVar(value=f"管理器介面 v{online.APP_VERSION}｜正在檢查介面版本…")
+        self.program_button = ttk.Button(self.surface, text="更新管理器程式",style="Metal.TButton",command=self.update_program,state="disabled")
+        self.news_button = ttk.Button(self.surface, text="查看本次更新", style="Metal.TButton", command=self.show_update_news)
+        self.online_text = tk.StringVar(value=f"管理器程式 v{online.APP_VERSION}｜正在檢查新版本…")
         self.catalog_text = tk.StringVar(value="按「一鍵更新遊戲插件」同步清單並補裝缺少的插件。")
         self.body = body = tk.Frame(self.surface,bg=theme.BG)
         columns = ("addon", "local", "latest", "result")
@@ -148,7 +155,8 @@ class UpdaterWindow:
         place(self.program_button,w-399,273,211,46)
         place(self.backups_button,w-176,273,147,46)
         self._text_items['online']=text(32,376,self.online_text.get(),10,theme.MUTED,width=w-64)
-        self._text_items['catalog']=text(32,402,self.catalog_text.get(),10,theme.MUTED,width=w-64)
+        self._text_items['catalog']=text(32,402,self.catalog_text.get(),10,theme.MUTED,width=w-270)
+        self.news_button.place(x=w-224,y=392,width=190,height=32)
         c.frame(27,433,w-54,h-502)
         place(self.body,33,399,w-66,h-514)
         c.create_line(27,h-56,w-27,h-56,fill=theme.LINE,tags="decoration")
@@ -173,13 +181,118 @@ class UpdaterWindow:
             "5. 完成後查看結果，再重新開啟遊戲。")
 
     def check_online(self):
+        game = self.game
         def worker():
+            update, app_error, notice, news_error = None, None, None, None
             try:
                 update = online.check_app()
-                self.events.put(("app_status", (update, None)))
             except Exception as exc:
-                self.events.put(("app_status", (None, process_error(exc))))
+                app_error = process_error(exc)
+            try:
+                notice = notices.discover()
+            except Exception as exc:
+                news_error = process_error(exc)
+                try:
+                    notice = notices.cached()
+                except Exception:
+                    pass
+            self.events.put(("discovery", (game, update, app_error, notice, news_error)))
         threading.Thread(target=worker, daemon=True).start()
+
+    def maybe_show_update_news(self):
+        if self.busy or (self._notice_popup is not None and self._notice_popup.winfo_exists()):
+            return
+        if not self.app_update and not self.notice:
+            return
+        key = notices.receipt_key(self.game, self.notice, self.app_update)
+        if key == self._automatic_notice:
+            return
+        self._automatic_notice = key
+        if notices.seen(key):
+            return
+        try:
+            resolve_game(self.game)
+        except Exception:
+            return
+        if not self.app_update and not notices.pending(self.notice, self.game):
+            return
+        self.show_update_news()
+
+    def show_update_news(self):
+        if self._notice_popup is not None and self._notice_popup.winfo_exists():
+            self._notice_popup.lift()
+            return self._notice_popup
+        popup = tk.Toplevel(self.root)
+        self._notice_popup = popup
+        popup.withdraw()
+        popup.title('整合包更新內容')
+        popup.transient(self.root)
+        popup.configure(bg=theme.BG)
+        popup.chrome = WindowChrome(popup,resizable=False,taskbar=False,caption_height=80,owner=self.root)
+        width, height = 760, min(660, max(440, self.chrome.work_area()[3]-40))
+        surface = theme.StoneCanvas(popup,self.theme,width=width,height=height)
+        surface.pack(fill='both',expand=True)
+        popup.chrome.attach(surface)
+        surface.material(width,height)
+        surface.frame(7,7,width-14,height-14)
+        title = '管理器程式有新版' if self.app_update else '整合包有新內容' if self.notice and notices.pending(self.notice,self.game) else '本次更新內容'
+        surface.create_text(28,28,text=title,anchor='nw',fill=theme.GOLD,font=(theme.TITLE_FONT,22,'bold'))
+        surface.create_line(28,79,width-28,79,fill=theme.LINE)
+        content = tk.Frame(surface,bg=theme.BG)
+        content.place(x=28,y=100,width=width-56,height=height-214)
+        text = tk.Text(content,wrap='word',font=(theme.FONT,12),bg='#191816',fg=theme.INK,
+                       relief='flat',padx=14,pady=12,spacing3=9,selectbackground='#574627',cursor='arrow')
+        scroll = ttk.Scrollbar(content,orient='vertical',command=text.yview)
+        text.configure(yscrollcommand=scroll.set)
+        scroll.pack(side='right',fill='y');text.pack(side='left',fill='both',expand=True)
+        text.insert('1.0',notices.body(self.notice,self.game,self.app_update));text.configure(state='disabled')
+        def dismiss():
+            self._notice_popup = None
+            popup.destroy()
+        def apply():
+            if self.busy:
+                self.status.set('請等目前的檢查或更新完成。')
+                return
+            try:
+                resolve_game(self.game)
+            except Exception:
+                dismiss();self.choose_folder();return
+            if self.app_update:
+                dismiss();self.update_program();return
+            if self.notice and online.app_order(self.notice.minimum_app)>online.app_order(online.APP_VERSION):
+                self.status.set('這批整合需要新版管理器，請稍後重新查詢管理器程式。')
+                return
+            if u.game_running():
+                self.status.set('請先完全退出《魔獸世界》，再按「一鍵更新遊戲插件」。')
+                hint.configure(text='偵測到遊戲仍在執行，請先退出遊戲；此視窗可保留。')
+                return
+            dismiss();self.start(True)
+        close = theme.CaptionButton(surface,text='×',command=dismiss,close=True)
+        close.place(x=width-65,y=24,width=42,height=28)
+        primary = ttk.Button(surface,text='先更新管理器程式' if self.app_update else '一鍵更新遊戲插件',style='Primary.TButton',command=apply)
+        try:
+            resolve_game(self.game)
+        except Exception:
+            primary.configure(text='先選擇遊戲位置')
+        primary.place(x=width-268,y=height-78,width=240,height=46)
+        later = ttk.Button(surface,text='稍後再說',style='Metal.TButton',command=dismiss)
+        later.place(x=28,y=height-78,width=130,height=46)
+        hint = tk.Label(surface,text='安裝或更新遊戲插件前，請先完全退出遊戲。',bg=theme.BG,fg=theme.MUTED,font=(theme.FONT,10))
+        hint.place(x=28,y=height-110)
+        if self.busy or (self.notice and online.app_order(self.notice.minimum_app)>online.app_order(online.APP_VERSION) and not self.app_update):
+            primary.state(['disabled'])
+        popup.update_idletasks()
+        popup.geometry(f'{width}x{height}+{max(0,self.root.winfo_rootx()+(self.root.winfo_width()-width)//2)}+{max(0,self.root.winfo_rooty()+60)}')
+        popup.protocol('WM_DELETE_WINDOW',dismiss)
+        popup.bind('<Escape>',lambda e:dismiss())
+        popup.deiconify();popup.lift(self.root)
+        key = notices.receipt_key(self.game,self.notice,self.app_update)
+        self._automatic_notice = key
+        try:
+            notices.acknowledge(key)
+        except OSError:
+            self.status.set('無法儲存提醒紀錄，請確認管理器資料夾可寫入。')
+        return popup
 
     def open_project_page(self, _event=None):
         webbrowser.open(PROJECT_URL)
@@ -190,7 +303,7 @@ class UpdaterWindow:
         self.busy = True
         for button in (self.update_button, self.check_button, self.folder_button, self.program_button):
             button.state(["disabled"])
-        self.status.set("正在下載新版管理器介面（UI）；驗證完成後會自動重新開啟。")
+        self.status.set("正在下載新版管理器程式；驗證完成後會自動重新開啟。")
         update = self.app_update
         def worker():
             try:
@@ -232,6 +345,12 @@ class UpdaterWindow:
         self.update_client_text()
         self.update_install_text()
         self.table.delete(*self.table.get_children())
+        if self._notice_popup is not None and self._notice_popup.winfo_exists():
+            self._notice_popup.destroy()
+            self._notice_popup = None
+        self.notice = None
+        self._automatic_notice = None
+        self.check_online()
         try:
             remember_game(game)
             self.status.set("已選擇遊戲位置。可按「只檢查」，或關閉遊戲後按「一鍵更新遊戲插件」。")
@@ -269,11 +388,21 @@ class UpdaterWindow:
         try:
             while True:
                 kind, value = self.events.get_nowait()
+                if kind == 'discovery':
+                    game, update, app_error, notice, news_error = value
+                    if game != self.game:
+                        continue
+                    self.notice, self.notice_error = notice, news_error
+                    if notice:
+                        self.catalog_text.set('離線顯示上次更新內容；可稍後再查詢。' if news_error else '整合包有新內容，請查看本次更新。' if notices.pending(notice,self.game) else '整合包已同步，可查看本次更新內容。')
+                    else:
+                        self.catalog_text.set('暫時無法查詢整合包更新，可稍後再按「只檢查」。')
+                    kind, value = 'app_status', (update, app_error)
                 if kind == "app_status":
                     self.app_update, error = value
-                    text = (f"介面有新版 v{self.app_update['version']}，可按「更新管理器介面（UI）」" if self.app_update else
-                            f"暫時無法查版：{error}" if error else "管理器介面已是最新版本")
-                    self.online_text.set(f"管理器介面 v{online.APP_VERSION}｜{text}")
+                    text = (f"有新版 v{self.app_update['version']}，可按「更新管理器程式」" if self.app_update else
+                            f"暫時無法查版：{error}" if error else "管理器程式已是最新版本")
+                    self.online_text.set(f"管理器程式 v{online.APP_VERSION}｜{text}")
                     if self.app_update is not None and not self.busy:
                         self.program_button.state(["!disabled"])
                     continue
@@ -306,6 +435,7 @@ class UpdaterWindow:
                 self.status.set(f"完成　已安裝／更新 {updated}　可安裝／更新 {available}　需查看 {skipped}（雙擊列看完整結果）")
         except queue.Empty:
             pass
+        self.maybe_show_update_news()
         self.root.after(100, self.poll)
 
     def show_details(self, event):

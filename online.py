@@ -11,7 +11,7 @@ import uuid
 
 import updater as u
 
-APP_VERSION = "1.2.3"
+APP_VERSION = "1.3.0"
 CATALOG_MIN_APP = "1.2.2"
 REPOSITORY = "littleblackmann/wow-forever-addon-updater"
 CACHE = u.APP / "online"
@@ -60,12 +60,13 @@ def download(item, limit: int, sha256: str | None = None):
     return raw
 
 
-def parse_catalog(raw: bytes):
+def parse_catalog(raw: bytes, *, check_minimum=True):
     data = json.loads(raw)
     if data.get("schema") != 1 or not isinstance(data.get("revision"), str) or len(data["revision"]) > 80:
         raise u.SkipUpdate("不支援的整合清單格式")
-    if app_order(data.get("minimum_app", "")) > app_order(APP_VERSION):
-        raise u.SkipUpdate("線上清單需要新版管理器，請先按「更新管理器介面（UI）」")
+    minimum = app_order(data.get("minimum_app", ""))
+    if check_minimum and minimum > app_order(APP_VERSION):
+        raise u.SkipUpdate("線上清單需要新版管理器，請先按「更新管理器程式」")
     rows = data.get("packages")
     if not isinstance(rows, list) or not 0 < len(rows) <= 100:
         raise u.SkipUpdate("整合清單的插件數量無效")

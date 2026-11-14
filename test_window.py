@@ -19,6 +19,10 @@ class WindowTests(unittest.TestCase):
         (self.game / '.build.info').write_text('Product|Active|Version\nwowf|1|1.60.1.1234\n')
         self.root = tk.Tk()
         self.root.withdraw()
+        self.discovery_patch=patch.object(ui.UpdaterWindow,'check_online')
+        self.discovery_patch.start()
+        self.receipt_patch=patch.object(u,'APP',Path(self.tmp.name))
+        self.receipt_patch.start()
         self.app = ui.UpdaterWindow(self.root)
 
     def tearDown(self):
@@ -30,6 +34,57 @@ class WindowTests(unittest.TestCase):
         self.root = None
         gc.collect()
         self.tmp.cleanup()
+        self.discovery_patch.stop()
+        self.receipt_patch.stop()
+
+    def notice(self,minimum='1.2.2'):
+        self.app.game=self.game
+        self.app.notice=ui.notices.Notice('f'*64,minimum,'test',u.PACKAGES,{'id':'test','changes':['中文改善說明'],'descriptions':{}})
+
+    def test_update_notice_does_not_repeat_and_manual_button_still_opens(self):
+        self.notice()
+        with patch.object(self.app,'show_update_news') as show:
+            self.app.maybe_show_update_news();self.app.maybe_show_update_news()
+            self.assertEqual(show.call_count,1)
+        popup=self.app.show_update_news()
+        self.assertIs(self.app.show_update_news(),popup)
+        self.assertIsNone(self.root.grab_current())
+        self.assertTrue(ui.notices.seen(ui.notices.receipt_key(self.game,self.app.notice)))
+
+    def test_update_notice_game_running_does_not_install_and_popup_stays(self):
+        self.notice();popup=self.app.show_update_news()
+        buttons=[w for w in popup.winfo_children()[0].winfo_children() if isinstance(w,ui.ttk.Button)]
+        primary=next(w for w in buttons if w.cget('text')=='一鍵更新遊戲插件')
+        with patch.object(ui.u,'game_running',return_value=True),patch.object(self.app,'start') as start:
+            primary.invoke();start.assert_not_called()
+        self.assertTrue(popup.winfo_exists())
+
+    def test_required_program_update_runs_first(self):
+        self.notice('99.0.0');self.app.app_update={'version':'99.0.0'}
+        popup=self.app.show_update_news()
+        primary=next(w for w in popup.winfo_children()[0].winfo_children() if isinstance(w,ui.ttk.Button) and w.cget('text')=='先更新管理器程式')
+        with patch.object(self.app,'update_program') as update,patch.object(self.app,'start') as start:
+            primary.invoke();update.assert_called_once();start.assert_not_called()
+
+    def test_no_auto_popup_during_update_and_no_duplicate_after_receipt(self):
+        self.notice();self.app.busy=True
+        with patch.object(self.app,'show_update_news') as show:
+            self.app.maybe_show_update_news();show.assert_not_called()
+            self.app.busy=False
+            ui.notices.acknowledge(ui.notices.receipt_key(self.game,self.app.notice))
+            self.app.maybe_show_update_news();show.assert_not_called()
+
+    def test_required_program_unavailable_cannot_start_addon_install(self):
+        self.notice('99.0.0');popup=self.app.show_update_news()
+        primary=next(w for w in popup.winfo_children()[0].winfo_children() if isinstance(w,ui.ttk.Button) and w.cget('text')=='一鍵更新遊戲插件')
+        self.assertIn('disabled',primary.state())
+
+    def test_discovery_for_previous_game_is_ignored(self):
+        self.notice();before=self.app.notice
+        self.app.events.put(('discovery',(Path(self.tmp.name)/'different',None,None,None,None)))
+        with patch.object(self.app,'maybe_show_update_news'):
+            self.app.poll()
+        self.assertIs(self.app.notice,before)
 
     def test_folder_picker_normalizes_and_remembers(self):
         with patch.object(ui.filedialog, 'askdirectory', return_value=str(self.game / '_forever_')), \
