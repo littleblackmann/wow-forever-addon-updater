@@ -1,13 +1,13 @@
 {
   "platynator": {
-    "version": "545",
+    "version": "546",
     "files": [
       "Platynator/Platynator.toc",
       "Platynator/XiaoHei_zhTW.lua"
     ]
   },
   "rarescanner": {
-    "version": "1.60.1.6",
+    "version": "1.60.1.8",
     "files": [
       "RareScanner/RareScanner.toc",
       "RareScanner/XiaoHei_zhTW.lua"
@@ -21,14 +21,14 @@
     ]
   },
   "baganator": {
-    "version": "855",
+    "version": "861",
     "files": [
       "Baganator/Baganator.toc",
       "Baganator/XiaoHei_zhTW.lua"
     ]
   },
   "auctionator": {
-    "version": "346",
+    "version": "347",
     "files": [
       "Auctionator/Auctionator.toc",
       "Auctionator/XiaoHei_zhTW.lua"
@@ -49,7 +49,7 @@
     ]
   },
   "atlasloot": {
-    "version": "1.3.9",
+    "version": "1.4.1",
     "files": [
       "AtlasBIStooltips/AtlasBIStooltips.lua",
       "AtlasBIStooltips/AtlasBIStooltips.toc",
@@ -65,7 +65,7 @@
     ]
   },
   "bbf": {
-    "version": "2.2.1b",
+    "version": "2.2.2c",
     "files": [
       "BetterBlizzFrames/BetterBlizzFrames.toc",
       "BetterBlizzFrames/BetterBlizzFrames_Camelot.toc"
@@ -79,7 +79,7 @@
     ]
   },
   "shortest": {
-    "version": "1.37.0",
+    "version": "1.39.0",
     "files": [
       "ShortestPathForever/ShortestPathForever.toc"
     ]
@@ -91,7 +91,7 @@
     ]
   },
   "zone": {
-    "version": "1.10.2",
+    "version": "1.10.3",
     "files": [
       "ZoneInfoForever/Locales.lua",
       "ZoneInfoForever/ZoneInfoForever.lua",

@@ -11,7 +11,7 @@ import uuid
 
 import updater as u
 
-APP_VERSION = "1.3.0"
+APP_VERSION = "1.3.1"
 CATALOG_MIN_APP = "1.2.2"
 REPOSITORY = "littleblackmann/wow-forever-addon-updater"
 CACHE = u.APP / "online"
