@@ -55,7 +55,7 @@ def main():
                 result = u.run_updates(True, report, **args)
         else:
             # Retain temporary old fixtures inside this test, not in the user's Recycle Bin.
-            with patch.object(u, 'recycle_completed_file'):
+            with patch.object(u, 'delete_replaced_file'):
                 result = u.run_updates(True, report, **args)
         # Author metadata/CDN caches can briefly lag an already installed release.
         # Keeping a newer local version is a successful safety outcome, not failure.
@@ -67,15 +67,21 @@ def main():
         assert not (addons / 'ForeverQuestPins').exists()
         assert not (addons / 'AmobiCompanion').exists()
         assert (addons / 'XiaoHeiAddonHub/Routes.lua').is_file()
-        atlas = (addons / 'AtlasLootClassic_DungeonsAndRaids/data.lua').read_text(encoding='utf-8-sig')
-        assert '永恆團隊' in atlas and '族長之廳' in atlas and '海加爾山' in atlas
+        customizations = args['catalog'].customizations if '--online-catalog' in sys.argv else u.CUSTOMIZATIONS
+        manifest = json.loads((customizations / 'manifest.json').read_text(encoding='utf-8'))
+        if not manifest:
+            for pkg in u.PACKAGES:
+                version = u.installed_version(addons, pkg)
+                archive = baseline / f'{pkg.key}-{version}.zip'
+                if archive.is_file():
+                    assert u.read_live(addons, pkg.managed_folders) == u.read_zip(archive, pkg.managed_folders), pkg.key
         # Repeated check must be idempotent and see all installed official packages as current.
         if '--cached' in sys.argv:
             with patch.object(u, 'find_release', side_effect=lambda p, _: releases[p.key]):
                 assert u.run_updates(False, lambda *r: None, **args) == (0, 0, 0)
         else:
             assert u.run_updates(False, lambda *r: None, **args) == (0, 0, 0)
-        print('PASS: complete empty-client install, localized AtlasLoot, hub, preserved baselines and idempotent check', flush=True)
+        print('PASS: verified plugin contents, hub, preserved baselines and idempotent check', flush=True)
     assert live_before == u.read_live(u.ADDONS, live_folders)
     print('PASS: all live managed addons unchanged', flush=True)
 

@@ -37,8 +37,12 @@ class Notice:
 
 
 def discover():
-    # Only public JSON is read. No extraction, baseline or AddOns writes here.
-    raw = o.download(o.asset(o.release(o.CATALOG_TAG), 'catalog.json'), 512 * 1024)
+    # Read the local candidate when selected, otherwise check just the public JSON.
+    catalog = o.local_catalog()
+    if catalog is not None:
+        raw = (catalog.customizations.parent / 'catalog.json').read_bytes()
+    else:
+        raw = o.download(o.asset(o.release(o.CATALOG_TAG), 'catalog.json'), 512 * 1024)
     data, packages = o.parse_catalog(raw, check_minimum=False)
     news = validate_news(data.get('news'), packages)
     return Notice(hashlib.sha256(raw).hexdigest(), data['minimum_app'], data['revision'], packages, news)

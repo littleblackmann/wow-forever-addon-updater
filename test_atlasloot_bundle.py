@@ -1,4 +1,5 @@
 """Regression checks for the shipped AtlasLoot localization and migration history."""
+from io import BytesIO
 import re
 import unittest
 import zipfile
@@ -7,11 +8,12 @@ import updater as u
 
 class AtlasLootBundleTests(unittest.TestCase):
     def test_141_translation_keeps_all_author_data_and_existing_names(self):
-        package=next(p for p in u.PACKAGES if p.key=='atlasloot')
-        base=u.read_zip(u.CUSTOMIZATIONS/'atlasloot/base.zip',package.managed_folders)
-        local=u.read_zip(u.CUSTOMIZATIONS/'atlasloot/local.zip',package.managed_folders)
-        key='atlaslootclassic_dungeonsandraids/data.lua'
-        original=u.normalized_text(base[key][1]);translated=u.normalized_text(local[key][1])
+        key='AtlasLootClassic_DungeonsAndRaids/data.lua'
+        with zipfile.ZipFile(u.CUSTOMIZATIONS/'history.zip') as history:
+            with zipfile.ZipFile(BytesIO(history.read('atlasloot-1.4.1/base.zip'))) as base:
+                original=u.normalized_text(base.read(key))
+            with zipfile.ZipFile(BytesIO(history.read('atlasloot-1.4.1/local.zip'))) as local:
+                translated=u.normalized_text(local.read(key))
         wrapper=r'ForeverName\("([^"\n]*)", "([^"\n]*)"\)'
         self.assertEqual(len(re.findall(wrapper,translated)),103)
         restored=re.sub(wrapper,lambda m:'"'+m[1]+'"',translated)

@@ -36,7 +36,7 @@ class RecoveryTests(unittest.TestCase):
         def fetch(url, limit):
             return (self.old if old_raw is None else old_raw) if url.endswith('old.zip') else self.new
         with patch.object(u, 'PACKAGES', (f.pkg,)), patch.object(u, 'find_release', side_effect=release) as lookup, \
-                patch.object(u, 'fetch', side_effect=fetch), patch.object(u, 'recycle_completed_file'), \
+                patch.object(u, 'fetch', side_effect=fetch), patch.object(u, 'delete_replaced_file'), \
                 patch.object(u.shutil, 'which', return_value=None):
             result = u.run_updates(apply, lambda *row: rows.append(row), game=f.game,
                                    backups=f.backups, baselines=f.baselines, running=lambda: False)

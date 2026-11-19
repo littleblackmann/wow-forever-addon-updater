@@ -1,4 +1,4 @@
-"""Build the portable package's addon-only customizations from this checkout."""
+"""Build the portable package's own addon hub and preserve migration history."""
 from pathlib import Path
 import json
 import tempfile
@@ -10,12 +10,12 @@ import updater as u
 
 
 def build_customizations(addons: Path = u.ADDONS, baselines: Path = u.BASELINES,
-                         output: Path = u.APP / "customizations"):
+                         output: Path = u.APP / "customizations", *, include_local_patches=False):
     output = output.absolute()
     output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='.prepare-customizations-', dir=output.parent) as tmp:
         ready = Path(tmp) / 'ready'
-        _write_customizations(addons, baselines, ready)
+        _write_customizations(addons, baselines, ready, include_local_patches=include_local_patches)
         history = output / "history.zip"
         if history.is_file():
             u.assert_plain(history)
@@ -41,10 +41,10 @@ def build_customizations(addons: Path = u.ADDONS, baselines: Path = u.BASELINES,
             raise
 
 
-def _write_customizations(addons: Path, baselines: Path, output: Path):
+def _write_customizations(addons: Path, baselines: Path, output: Path, *, include_local_patches):
     output.mkdir(exist_ok=True)
     manifest = {}
-    for pkg in u.PACKAGES:
+    for pkg in u.PACKAGES if include_local_patches else ():
         version = u.installed_version(addons, pkg)
         folders = tuple(n for n in pkg.managed_folders if (addons / n).is_dir())
         base = u.read_zip(baselines / f"{pkg.key}-{version}.zip", folders)

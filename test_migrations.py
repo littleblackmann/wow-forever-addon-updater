@@ -109,7 +109,7 @@ class CurrentCatalogAdoptionTests(unittest.TestCase):
 
     def run_update(self):
         rows = []
-        with patch.object(u, 'find_release', return_value=self.release), patch.object(u, 'fetch', return_value=self.raw), patch.object(u, 'recycle_completed_file'):
+        with patch.object(u, 'find_release', return_value=self.release), patch.object(u, 'fetch', return_value=self.raw), patch.object(u, 'delete_replaced_file'):
             result = u.run_updates(True, lambda *r: rows.append(r), game=self.f.game, baselines=self.f.baselines,
                                    backups=self.f.backups, running=lambda: False, catalog=self.catalog)
         return result, rows

@@ -16,9 +16,10 @@ class NoticeTests(unittest.TestCase):
         self.notice=n.Notice('a'*64,'1.2.2','2026.11.14',(self.pkg,),{'id':'batch-one','changes':['改善更新流程'],'descriptions':{self.pkg.key:'中文用途'}})
         self.app_patch=patch.object(u,'APP',self.root);self.app_patch.start()
         self.base_patch=patch.object(u,'baseline_location',return_value=self.root/'base');self.base_patch.start()
+        self.cache_patch=patch.object(o,'CACHE',self.root/'online');self.cache_patch.start()
 
     def tearDown(self):
-        self.app_patch.stop();self.base_patch.stop();self.tmp.cleanup()
+        self.cache_patch.stop();self.app_patch.stop();self.base_patch.stop();self.tmp.cleanup()
 
     def test_receipt_is_once_per_batch_client_and_program_version(self):
         key=n.receipt_key(self.game,self.notice)

@@ -67,8 +67,7 @@ class OnlineTests(unittest.TestCase):
     def install(self, catalog):
         raw, release = self.f.archive()
         rows = []
-        with patch.object(u, 'find_release', return_value=release), patch.object(u, 'fetch', return_value=raw), \
-                patch.object(u, 'recycle_completed_file'):
+        with patch.object(u, 'find_release', return_value=release), patch.object(u, 'fetch', return_value=raw):
             result = u.run_updates(True, lambda *row: rows.append(row), game=self.f.game,
                                    backups=self.f.backups, baselines=self.f.baselines,
                                    running=lambda: False, catalog=catalog)
@@ -81,6 +80,17 @@ class OnlineTests(unittest.TestCase):
         self.assertEqual(first.identity, offline.identity)
         self.assertIn('離線', offline.note)
         self.assertEqual(offline.packages[0].anchor, 'Sample')
+
+    def test_local_catalog_pin_does_not_fetch_or_fall_back_to_public(self):
+        candidate = self.sync()
+        pointer = o.CACHE / 'local-catalog.txt'
+        pointer.write_text(candidate.identity, encoding='ascii')
+        with patch.object(o, 'release') as release:
+            self.assertEqual(o.sync_catalog().identity, candidate.identity)
+            pointer.write_text('invalid', encoding='ascii')
+            with self.assertRaises(u.SkipUpdate):
+                o.sync_catalog()
+            release.assert_not_called()
 
     def test_bad_download_does_not_replace_last_good_catalog(self):
         good = self.sync()
@@ -120,6 +130,7 @@ class OnlineTests(unittest.TestCase):
         self.assertEqual(result, (2, 2, 0), rows)
         self.assertEqual(target.read_bytes(), b'local label = "Chinese two"\nlocal value = 9\n')
         self.assertIn(b'new hub feature', (self.f.addons / 'XiaoHeiAddonHub/Hub.lua').read_bytes())
+        self.assertFalse(any(self.f.backups.glob('hub-*')))
         result, rows = self.install(two)
         self.assertEqual(result, (0, 0, 0), rows)
 
@@ -184,7 +195,7 @@ class OnlineTests(unittest.TestCase):
         downloads={releases['sample'].url:sample_raw,releases['extra'].url:extra_raw}
         rows=[]
         with patch.object(u,'PACKAGES',(self.f.pkg,)),patch.object(u,'find_release',side_effect=lambda p,_:releases[p.key]), \
-                patch.object(u,'fetch',side_effect=lambda url,_:downloads[url]),patch.object(u,'recycle_completed_file'):
+                patch.object(u,'fetch',side_effect=lambda url,_:downloads[url]),patch.object(u,'delete_replaced_file'):
             result=u.run_updates(True,lambda *row:rows.append(row),game=self.f.game,backups=self.f.backups,
                                  baselines=self.f.baselines,running=lambda:False,catalog=two)
             again=u.run_updates(False,lambda *r:None,game=self.f.game,backups=self.f.backups,
@@ -198,7 +209,7 @@ class OnlineTests(unittest.TestCase):
         self.install(catalog)
         raw,release=self.f.archive('1.1',{'Sample/main.lua':b'local label = "English"\nlocal value = 2\n'})
         rows=[]
-        with patch.object(u,'find_release',return_value=release),patch.object(u,'fetch',return_value=raw),patch.object(u,'recycle_completed_file'):
+        with patch.object(u,'find_release',return_value=release),patch.object(u,'fetch',return_value=raw),patch.object(u,'delete_replaced_file'):
             result=u.run_updates(True,lambda *row:rows.append(row),game=self.f.game,backups=self.f.backups,
                                  baselines=self.f.baselines,running=lambda:False,catalog=catalog)
         self.assertEqual(result,(1,1,0),rows)

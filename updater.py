@@ -36,7 +36,7 @@ CUSTOMIZATIONS = RESOURCES / "customizations"
 MAX_ZIP = 150 * 1024**2
 MAX_UNPACKED = 400 * 1024**2
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-VERSION = r"(?:[vV]?\d+(?:\.\d+){0,3}[a-z]?|[rR]\d+)"
+VERSION = r"(?:[vV]?\d+(?:\.\d+){0,3}(?:[ -]?[a-z])?|[rR]\d+)"
 
 
 class SkipUpdate(Exception):
@@ -67,6 +67,7 @@ PACKAGES = (
     Package("leatrixplus", "便利功能（Leatrix Plus）", "Leatrix_Plus", "94855/leatrix-plus", rf"Leatrix_Plus-({VERSION})-forever\.zip"),
     Package("quickchannels", "聊天頻道快捷列（QuickChannels）", "QuickChannels", "itsindolence/quickchannelswow",
             rf"QuickChannels-v?({VERSION})\.zip"),
+    Package("dialogueui", "任務對話介面（Dialogue UI）", "DialogueUI", "989270/dialogueui", rf"DialogueUI-({VERSION})\.zip"),
     Package("lueur", "Lueur", "Lueur", "1732324/lueur", rf"Lueur-({VERSION})\.zip"),
     Package("atlasloot", "AtlasLoot", "AtlasLootClassic", "1422985/atlasloot-forever",
             rf"AtlasLoot-Classic-Forever-({VERSION})-\d+-\d+\.zip",
@@ -174,7 +175,7 @@ def game_running() -> bool:
 def version_name(value: str) -> str:
     if not re.fullmatch(VERSION, value, re.I):
         raise SkipUpdate(f"無法辨識版本 {value}")
-    return value.lower().removeprefix("v")
+    return value.lower().removeprefix("v").replace(" ", "").replace("-", "")
 
 
 def version_order(value: str):
@@ -193,6 +194,20 @@ def toc_names(folder: str):
     return tuple(f"{folder}{suffix}.toc" for suffix in ("_Forever", "_Camelot", ""))
 
 
+def package_version(pkg: Package, toc: bytes, read_file: Callable[[str], bytes]) -> str:
+    version = version_name(toc_fields(toc).get("Version", ""))
+    if pkg.key == "dialogueui" and version == "1.0.7c":
+        # CurseForge file 9666149 was released as 1.0.7-d but retained the c TOC.
+        marker = read_file("DialogueUI/Code/Dialogue/QuestHeaderWidget.lua")
+        if hashlib.sha256(marker).hexdigest() == "2f6c5a1f45e2bf763b4c9ceba695f2645a561767ec33acd3887916b6280a07bd":
+            return "1.0.7d"
+    return version
+
+
+def archived_version(pkg: Package, toc: bytes, files) -> str:
+    return package_version(pkg, toc, lambda relative: files.get(relative.casefold(), ("", b""))[1])
+
+
 def assert_plain(path: Path):
     info = path.lstat()
     if path.is_symlink() or getattr(info, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT:
@@ -202,11 +217,17 @@ def assert_plain(path: Path):
 def installed_version(path: Path, pkg: Package) -> str:
     folder = path / pkg.anchor
     assert_plain(folder)
+    def read_marker(relative):
+        marker = path / relative
+        if not marker.is_file():
+            return b""
+        assert_plain(marker)
+        return marker.read_bytes()
     for name in toc_names(pkg.anchor):
         file = folder / name
         if file.is_file():
             assert_plain(file)
-            return version_name(toc_fields(file.read_bytes()).get("Version", ""))
+            return package_version(pkg, file.read_bytes(), read_marker)
     raise SkipUpdate("找不到插件版本檔。")
 
 
@@ -392,7 +413,7 @@ def validate_package(files, pkg: Package, folders: tuple[str, ...], interface: s
         fields = toc_fields(toc[1])
         if interface not in re.findall(r"\d+", fields.get("Interface", "")):
             raise SkipUpdate(f"{folder} 的 TOC 未標示目前《永恆》介面版本 {interface}。")
-        if folder == pkg.anchor and version_name(fields.get("Version", "")) != version:
+        if folder == pkg.anchor and archived_version(pkg, toc[1], files) != version:
             raise SkipUpdate("ZIP 內版本與發布版本不一致。")
         for line in toc[1].decode("utf-8-sig").splitlines():
             filename = line.strip().split(" [", 1)[0].replace("\\", "/")
@@ -518,7 +539,7 @@ def previous_package(pkg: Package, original, live, temp: Path, folders: tuple[st
         return recognized
     toc = next((original.get(f"{pkg.anchor}/{name}".casefold()) for name in toc_names(pkg.anchor)
                 if f"{pkg.anchor}/{name}".casefold() in original), None)
-    version = version_name(toc_fields(toc[1]).get("Version", "")) if toc else ""
+    version = archived_version(pkg, toc[1], original) if toc else ""
     archive = customizations / "history.zip"
     if version and archive.is_file():
         name = f"{pkg.key}-{version}"
@@ -625,7 +646,7 @@ def install_package(pkg: Package, release: Release, addons: Path, folders: tuple
             original = read_zip(old_zip if old_zip.is_file() else archive, existing)
             root_toc = next((original.get(f"{pkg.anchor}/{name}".casefold()) for name in toc_names(pkg.anchor)
                              if f"{pkg.anchor}/{name}".casefold() in original), None)
-            if not root_toc or version_name(toc_fields(root_toc[1]).get("Version", "")) != current_version:
+            if not root_toc or archived_version(pkg, root_toc[1], original) != current_version:
                 raise SkipUpdate("原版 ZIP 與現有版本不相符。")
             if customizations is not None:
                 previous = previous_package(pkg, original, live, work, existing,
@@ -697,32 +718,20 @@ def process_error(exc: Exception) -> str:
     return str(exc)
 
 
-def recycle_completed_file(path: Path, parent: Path, directory: bool):
-    """Recycle only a direct child of the intended updater-owned directory."""
+def delete_replaced_file(path: Path, parent: Path, directory: bool):
+    """Delete only a verified direct child of the updater-owned directory."""
     path = path.absolute()
     parent = parent.resolve(strict=True)
-    if path.parent.resolve(strict=True) != parent or path.resolve(strict=True).parent != parent:
-        raise OSError("待清理檔案不在預期的資料夾內")
     assert_plain(path)
-    if path.is_dir() != directory or (not directory and not path.is_file()):
+    target = path.resolve(strict=True)
+    if path.parent.resolve(strict=True) != parent or target.parent != parent:
+        raise OSError("待清理檔案不在預期的資料夾內")
+    if target.is_dir() != directory or (not directory and not target.is_file()):
         raise OSError("待清理檔案類型不符")
-    powershell = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe"
-    script = r'''
-$ErrorActionPreference = 'Stop'
-Add-Type -AssemblyName Microsoft.VisualBasic
-$path = $env:XIAOHEI_RECYCLE_PATH
-if ($env:XIAOHEI_RECYCLE_KIND -eq 'directory') {
-  [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteDirectory($path, [Microsoft.VisualBasic.FileIO.UIOption]::OnlyErrorDialogs, [Microsoft.VisualBasic.FileIO.RecycleOption]::SendToRecycleBin)
-} else {
-  [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile($path, [Microsoft.VisualBasic.FileIO.UIOption]::OnlyErrorDialogs, [Microsoft.VisualBasic.FileIO.RecycleOption]::SendToRecycleBin)
-}
-'''
-    env = dict(os.environ, XIAOHEI_RECYCLE_PATH=str(path),
-               XIAOHEI_RECYCLE_KIND="directory" if directory else "file")
-    result = subprocess.run([str(powershell), "-NoProfile", "-NonInteractive", "-Command", script],
-                            env=env, capture_output=True, timeout=45, creationflags=NO_WINDOW)
-    if result.returncode or path.exists():
-        raise OSError("無法送至資源回收筒")
+    if directory:
+        shutil.rmtree(target)
+    else:
+        target.unlink()
 
 
 @contextmanager
@@ -831,16 +840,16 @@ def update_packages(apply, report, addons, backups, baselines, running, patch, i
                     cleanup.append((baselines / f"{pkg.key}-{current}.zip", baselines, False))
                 for path, parent, is_directory in cleanup:
                     try:
-                        recycle_completed_file(path, parent, is_directory)
+                        delete_replaced_file(path, parent, is_directory)
                     except Exception:
                         retained.append(str(path))
                 if retained:
                     skipped += 1
-                    result = f"已安裝／更新｜保留 {count} 個本機異動；無法回收，保留：{'、'.join(retained)}"
+                    result = f"已安裝／更新｜保留 {count} 個本機異動；舊檔未能完整刪除：{'、'.join(retained)}"
                 else:
                     result = ("已是最新｜更新紀錄已同步" if current and backup is None else
-                              "已安裝｜包含整合繁中" if not current else
-                              f"已更新／補齊｜保留 {count} 個本機異動；舊版已移至資源回收筒")
+                              "已安裝" if not current else
+                              f"已更新／補齊｜保留 {count} 個本機異動；舊版已刪除")
                 report(pkg.label, current or "未安裝", latest, result)
             except Exception as exc:
                 skipped += 1
@@ -860,10 +869,10 @@ def update_packages(apply, report, addons, backups, baselines, running, patch, i
                 updated += 1
                 if backup:
                     try:
-                        recycle_completed_file(backup, backups, True)
+                        delete_replaced_file(backup, backups, True)
                     except Exception:
                         skipped += 1
-                        report("小黑插件總入口", "已安裝", "整合版本", f"已更新；舊版保留於 {backup}")
+                        report("小黑插件總入口", "已安裝", "整合版本", f"已更新｜舊檔未能完整刪除：{backup}")
                         return updated, available, skipped
             report("小黑插件總入口", "已安裝" if hub_changed else "未安裝", "整合版本", "已同步" if apply else "可安裝／同步")
         except Exception as exc:

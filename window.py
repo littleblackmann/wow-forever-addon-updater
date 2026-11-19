@@ -169,7 +169,7 @@ class UpdaterWindow:
     def show_disclaimer(self):
         return theme.dialog(self.root,self.theme,"免責聲明",
             "Questie、AtlasLoot、DBM 等插件皆由各原作者製作，並非本人開發。\n\n"
-            "本人僅整理成方便下載、安裝與更新的非官方懶人包，並提供部分繁中內容。"
+            "本人僅整理成方便下載、安裝與更新的非官方懶人包。插件語言由各原作者提供。"
             "插件與相關內容的權利歸各原作者所有。",self.open_project_page)
 
     def show_guide(self):

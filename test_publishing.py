@@ -28,18 +28,18 @@ class PublishingTests(unittest.TestCase):
         self.app_patch.stop()
         self.f.tearDown()
 
-    def test_rebuilding_removes_no_longer_needed_local_patch(self):
+    def test_author_only_bundle_drops_local_patches(self):
         target=self.f.addons/'Sample/main.lua'
         original=target.read_bytes()
         target.write_bytes(original.replace(b'English',b'Chinese'))
         output=self.f.root/'bundle'
         with patch.object(u,'PACKAGES',(self.f.pkg,)):
-            build_share.build_customizations(self.f.addons,self.f.baselines,output)
+            build_share.build_customizations(self.f.addons,self.f.baselines,output,include_local_patches=True)
             self.assertTrue((output/'sample/local.zip').is_file())
-            target.write_bytes(original)
             build_share.build_customizations(self.f.addons,self.f.baselines,output)
         self.assertFalse((output/'sample/local.zip').exists(),'Stale translation must not be published again')
         self.assertEqual(json.loads((output/'manifest.json').read_text()),{})
+        self.assertIn(b'Chinese', target.read_bytes())
 
     def test_failed_build_leaves_previous_complete_bundle_unchanged(self):
         output=self.f.root/'bundle'
@@ -50,7 +50,7 @@ class PublishingTests(unittest.TestCase):
             target.write_bytes(target.read_bytes().replace(b'English',b'New translation'))
             missing=u.Package('missing','Missing','Missing','official/test','x')
             with patch.object(u,'PACKAGES',(self.f.pkg,missing)), self.assertRaises(Exception):
-                build_share.build_customizations(self.f.addons,self.f.baselines,output)
+                build_share.build_customizations(self.f.addons,self.f.baselines,output,include_local_patches=True)
         self.assertEqual(before,{p.relative_to(output):p.read_bytes() for p in output.rglob('*') if p.is_file()})
 
     def test_catalog_only_does_not_require_everyone_to_upgrade_ui(self):

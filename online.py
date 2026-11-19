@@ -11,8 +11,8 @@ import uuid
 
 import updater as u
 
-APP_VERSION = "1.3.1"
-CATALOG_MIN_APP = "1.2.2"
+APP_VERSION = "1.3.2"
+CATALOG_MIN_APP = "1.3.2"
 REPOSITORY = "littleblackmann/wow-forever-addon-updater"
 CACHE = u.APP / "online"
 CATALOG_TAG = "catalog"
@@ -127,7 +127,19 @@ def _cached(identity: str):
     return Catalog(packages, folder / "customizations", identity, "整合清單 " + data["revision"])
 
 
+def local_catalog() -> Catalog | None:
+    # The maintainer can test a verified catalog before making it public.
+    pin = CACHE / "local-catalog.txt"
+    if pin.is_file():
+        result = _cached(pin.read_text(encoding="ascii").strip())
+        return Catalog(result.packages, result.customizations, result.identity, f"本機測試｜{result.note}")
+    return None
+
+
 def sync_catalog() -> Catalog:
+    local = local_catalog()
+    if local is not None:
+        return local
     try:
         data = release(CATALOG_TAG)
         raw = download(asset(data, "catalog.json"), 512 * 1024)

@@ -96,11 +96,41 @@ class InstallTests(unittest.TestCase):
         changed = self.addons / 'Sample/main.lua'
         changed.write_bytes(b'local label = "Traditional Chinese"\nlocal value = 1\n')
         fresh, rel = self.archive('1.1', {'Sample/main.lua': b'local label = "English"\nlocal value = 2\n'})
-        # Keep recycled test objects in the temporary folder rather than polluting the user's recycle bin.
-        with patch.object(u.shutil, 'which', return_value=None), patch.object(u, 'recycle_completed_file'):
+        with patch.object(u.shutil, 'which', return_value=None):
             result, rows = self.run_sample(True, fresh, rel)
         self.assertEqual(result[0], 1, rows)
         self.assertEqual(changed.read_bytes(), b'local label = "Traditional Chinese"\nlocal value = 2\n')
+
+    def test_success_deletes_only_this_updates_replaced_files(self):
+        raw, release = self.archive()
+        self.run_sample(True, raw, release)
+        history = self.backups / 'older-backup'
+        history.mkdir()
+        (history / 'keep.lua').write_bytes(b'retain old history')
+        other = self.baselines / 'other-1.0.zip'
+        other.write_bytes(b'unrelated archive')
+        fresh, rel = self.archive('1.1')
+
+        result, rows = self.run_sample(True, fresh, rel)
+
+        self.assertEqual(result[0], 1, rows)
+        self.assertIn('舊版已刪除', rows[0][-1])
+        self.assertEqual(u.installed_version(self.addons, self.pkg), '1.1')
+        self.assertFalse((self.baselines / 'sample-1.0.zip').exists())
+        self.assertEqual((self.baselines / 'sample-1.1.zip').read_bytes(), fresh)
+        self.assertEqual(list(self.backups.iterdir()), [history])
+        self.assertEqual((history / 'keep.lua').read_bytes(), b'retain old history')
+        self.assertEqual(other.read_bytes(), b'unrelated archive')
+
+    def test_cleanup_rejects_a_directory_outside_the_expected_parent(self):
+        self.backups.mkdir()
+        other = self.root / 'outside'
+        other.mkdir()
+        child = other / 'file'
+        child.write_bytes(b'keep')
+        with self.assertRaises(OSError):
+            u.delete_replaced_file(other, self.backups, directory=True)
+        self.assertEqual(child.read_bytes(), b'keep')
 
     def test_conflict_preserves_live_plugin(self):
         raw, release = self.archive()
@@ -125,13 +155,14 @@ class InstallTests(unittest.TestCase):
         with patch.object(Path, 'rename', fail_one): result, rows = self.run_sample(True, fresh, rel)
         self.assertEqual(result[0], 0)
         self.assertEqual(u.read_live(self.addons, self.pkg.managed_folders), before)
+        self.assertEqual((self.baselines / 'sample-1.0.zip').read_bytes(), raw)
 
     def test_same_version_can_fill_missing_modules(self):
         raw, release = self.archive()
         self.run_sample(True, raw, release)
         # Move just one module aside to simulate a partially installed package.
         (self.addons / 'Sample_Options').rename(self.root / 'module-off')
-        with patch.object(u, 'recycle_completed_file'): result, rows = self.run_sample(True, raw, release)
+        with patch.object(u, 'delete_replaced_file'): result, rows = self.run_sample(True, raw, release)
         self.assertEqual(result[0], 1, rows)
         self.assertTrue((self.addons / 'Sample_Options/main.lua').is_file())
         self.assertTrue((self.baselines / 'sample-1.0.zip').is_file())
@@ -141,7 +172,7 @@ class InstallTests(unittest.TestCase):
         self.run_sample(True, raw, release)
         (self.baselines / 'sample-1.0.zip').rename(self.root / 'archive-off.zip')
         (self.addons / 'Sample/main.lua').write_bytes(b'local personal = true\n')
-        with patch.object(u, 'recycle_completed_file'): result, rows = self.run_sample(True, raw, release)
+        with patch.object(u, 'delete_replaced_file'): result, rows = self.run_sample(True, raw, release)
         self.assertEqual(result[0], 1, rows)
         self.assertEqual((self.addons / 'Sample/main.lua').read_bytes(), b'local personal = true\n')
         self.assertEqual((self.baselines / 'sample-1.0.zip').read_bytes(), raw)
