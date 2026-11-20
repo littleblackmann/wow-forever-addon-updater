@@ -11,6 +11,9 @@ import updater as u
 
 def main():
     live_folders = tuple(n for p in u.PACKAGES for n in p.managed_folders if (u.ADDONS / n).is_dir())
+    source_packages = u.PACKAGES
+    if '--existing' in sys.argv and u.FOREVER_CORE.anchor in live_folders:
+        source_packages = (*source_packages, u.FOREVER_CORE)
     live_before = u.read_live(u.ADDONS, live_folders)
     reports = []
     with tempfile.TemporaryDirectory(prefix='空白客戶端-') as tmp:
@@ -31,9 +34,11 @@ def main():
             for folder in (*live_folders, 'XiaoHeiAddonHub'):
                 shutil.copytree(u.ADDONS / folder, addons / folder)
             if '--no-baselines' not in sys.argv:
-                for pkg in u.PACKAGES:
+                for pkg in source_packages:
                     version = u.installed_version(u.ADDONS, pkg)
                     name = f'{pkg.key}-{version}.zip'
+                    if pkg is u.FOREVER_CORE and not (u.BASELINES / name).is_file() and '--cached' not in sys.argv:
+                        continue  # A retained bundled Core may have no standalone history yet.
                     shutil.copy2(u.BASELINES / name, baseline / name)
         args = dict(game=game, backups=root/'backups', baselines=baseline, running=lambda: False)
         if '--online-catalog' in sys.argv:
@@ -44,7 +49,7 @@ def main():
         # With --cached, use the previously verified original ZIPs as fixture downloads.
         if '--cached' in sys.argv:
             releases, downloads = {}, {}
-            for pkg in u.PACKAGES:
+            for pkg in source_packages:
                 version = u.installed_version(u.ADDONS, pkg)
                 url = 'https://fixture.invalid/' + pkg.key
                 raw = (u.BASELINES / f'{pkg.key}-{version}.zip').read_bytes()
@@ -60,7 +65,8 @@ def main():
         # Author metadata/CDN caches can briefly lag an already installed release.
         # Keeping a newer local version is a successful safety outcome, not failure.
         newer = sum(row[-1] == '保留較新本機版本' for row in reports)
-        expected = len(u.PACKAGES) + 1 - newer
+        standalone = any(row[0] == u.FOREVER_CORE.label for row in reports)
+        expected = len(u.PACKAGES) + 1 + standalone - newer
         assert result == (expected, expected, 0), (result, reports)
         print(f'PASS: {expected} operations completed, {newer} newer local package(s) preserved, 0 errors', flush=True)
         assert not (addons / 'RXPGuides').exists()
@@ -70,7 +76,7 @@ def main():
         customizations = args['catalog'].customizations if '--online-catalog' in sys.argv else u.CUSTOMIZATIONS
         manifest = json.loads((customizations / 'manifest.json').read_text(encoding='utf-8'))
         if not manifest:
-            for pkg in u.PACKAGES:
+            for pkg in source_packages:
                 version = u.installed_version(addons, pkg)
                 archive = baseline / f'{pkg.key}-{version}.zip'
                 if archive.is_file():

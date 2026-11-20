@@ -101,6 +101,9 @@ PACKAGES = (
             rf"DBM-Vanilla_SoD-({VERSION})\.zip", ("DBM-Azeroth",)),
 )
 
+FOREVER_CORE = Package("forevercore", "永恆共用元件（ForeverCore）", "ForeverCore", "1796337/forevercore",
+                       rf"ForeverCore-({VERSION})-forever\.zip")
+
 
 def client_patch(game: Path = GAME) -> tuple[str, str]:
     lines = (game / ".build.info").read_text(encoding="utf-8-sig").splitlines()
@@ -413,9 +416,19 @@ def archived_toc(files, folder: str):
                  if f"{folder}/{name}".casefold() in files), None)
 
 
+def bundles_forever_core(pkg: Package) -> bool:
+    return pkg.key == "shortest" and pkg.anchor == "ShortestPathForever" and FOREVER_CORE.anchor in pkg.folders
+
+
 def embeds_forever_core(pkg: Package, fields) -> bool:
-    return (pkg.key == "shortest" and pkg.anchor == "ShortestPathForever" and "ForeverCore" in pkg.folders
-            and fields.get("X-Forever-Core-Embed") == "1")
+    return bundles_forever_core(pkg) and fields.get("X-Forever-Core-Embed") == "1"
+
+
+def validate_forever_core_identity(fields):
+    project = fields.get("X-Curse-Project-ID", "").strip()
+    if project == "1796337" or (not project and fields.get("X-Website") == "https://github.com/cjber/forever-core"):
+        return
+    raise SkipUpdate("無法確認此 ForeverCore 是原作者的套件，已保留現況。")
 
 
 def archive_folders(pkg: Package, folders: tuple[str, ...], files) -> tuple[str, ...]:
@@ -431,6 +444,8 @@ def validate_package(files, pkg: Package, folders: tuple[str, ...], interface: s
         if toc is None:
             raise SkipUpdate(f"套件缺少已安裝的模組 {folder}")
         fields = toc_fields(toc)
+        if pkg is FOREVER_CORE:
+            validate_forever_core_identity(fields)
         if interface not in re.findall(r"\d+", fields.get("Interface", "")):
             raise SkipUpdate(f"{folder} 的 TOC 未標示目前《永恆》介面版本 {interface}。")
         if folder == pkg.anchor and archived_version(pkg, toc, files) != version:
@@ -809,6 +824,10 @@ def run_updates(apply: bool, report, addons: Path | None = None, game: Path = GA
 
 def update_packages(apply, report, addons, backups, baselines, running, patch, interface, catalog=None):
     planned = catalog.packages if catalog is not None else PACKAGES
+    shortest = next((pkg for pkg in planned if bundles_forever_core(pkg)), None)
+    if shortest and (addons / FOREVER_CORE.anchor).exists():
+        # Process this after Shortest Path, which may switch from the old bundle to the embedded format.
+        planned = (*planned, FOREVER_CORE)
     state_file = baselines / ".catalog-state.json"
     if state_file.is_file():
         state = json.loads(state_file.read_text(encoding="utf-8"))
@@ -838,7 +857,17 @@ def update_packages(apply, report, addons, backups, baselines, running, patch, i
             current = latest = "—"
             try:
                 exists = (addons / pkg.anchor).exists()
+                standalone = pkg is FOREVER_CORE
+                if standalone:
+                    if not exists:
+                        continue
+                    if shortest and (addons / shortest.anchor).exists():
+                        shortest_toc = installed_toc(addons, shortest.anchor)
+                        if not embeds_forever_core(shortest, toc_fields(shortest_toc)):
+                            continue
                 toc = installed_toc(addons, pkg.anchor) if exists else None
+                if standalone:
+                    validate_forever_core_identity(toc_fields(toc))
                 current = installed_version(addons, pkg, toc) if toc is not None else None
                 release = releases[pkg.key].result()
                 latest = release.version
@@ -847,7 +876,9 @@ def update_packages(apply, report, addons, backups, baselines, running, patch, i
                 missing = any(not (addons / name).is_dir() for name in folders
                               if not (embedded and name == "ForeverCore"))
                 no_baseline = not (baselines / f"{pkg.key}-{current}.zip").is_file()
-                new_catalog = catalog is not None and catalog.identity is not None and state.get(pkg.key) != catalog.identity
+                active_catalog = None if standalone else catalog
+                new_catalog = (active_catalog is not None and active_catalog.identity is not None
+                               and state.get(pkg.key) != active_catalog.identity)
                 if current and (version_order(latest) < version_order(current)
                                 or (latest == current and not missing and not no_baseline and not new_catalog)):
                     report(pkg.label, current, latest, "已是最新" if latest == current else "保留較新本機版本")
@@ -864,9 +895,10 @@ def update_packages(apply, report, addons, backups, baselines, running, patch, i
                     existing = tuple(name for name in folders if (addons / name).is_dir())
                     recover_baseline(pkg, current, patch, interface, existing, baselines)
                 backup, count = install_package(pkg, release, addons, folders, current, interface, backups, baselines, running,
-                                                catalog.customizations if catalog is not None else None,
-                                                (lambda key=pkg.key: previous(key)) if catalog is not None and current else None)
-                record(pkg.key)
+                                                active_catalog.customizations if active_catalog is not None else None,
+                                                (lambda key=pkg.key: previous(key)) if active_catalog is not None and current else None)
+                if active_catalog is not None:
+                    record(pkg.key)
                 updated += 1
                 retained = []
                 cleanup = [(backup, backups, True)] if backup else []

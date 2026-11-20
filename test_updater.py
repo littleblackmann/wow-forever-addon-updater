@@ -1,3 +1,4 @@
+from dataclasses import replace
 from pathlib import Path
 from io import BytesIO
 import hashlib
@@ -268,6 +269,54 @@ class EmbeddedForeverCoreTests(unittest.TestCase):
                 self.assertIn('ForeverCore', rows[0][-1])
                 self.assertFalse((f.addons/f.pkg.anchor).exists())
                 self.assertFalse((f.baselines/'shortest-1.43.9.zip').exists())
+
+    def core_archive(self, version, project='1796337'):
+        stream = BytesIO()
+        with zipfile.ZipFile(stream, 'w') as archive:
+            archive.writestr('ForeverCore/ForeverCore.toc',
+                             f'## Interface: 16001\n## Version: {version}\n## X-Curse-Project-ID: {project}\nmain.lua\n')
+            archive.writestr('ForeverCore/main.lua', f'return "{version}"\n')
+        raw = stream.getvalue()
+        return raw, u.Release(version, f'https://example.invalid/forevercore-{version}.zip', len(raw))
+
+    def test_one_click_updates_retained_core_after_shortest_switches_to_embedded(self):
+        f = self.fixture
+        core_old, old_release = self.core_archive('1.15.1')
+        with zipfile.ZipFile(BytesIO(core_old)) as archive:
+            contents = {name: archive.read(name) for name in archive.namelist()}
+        bundled, bundled_release = f.archive('1.43.2', contents)
+        self.assertEqual(f.run_sample(True, bundled, bundled_release)[0][0], 1)
+        core_new, new_release = self.core_archive('1.15.6')
+        fresh, release = self.embedded_archive()
+        release = replace(release, url='https://example.invalid/shortest.zip')
+        archives = {item.url: raw for item, raw in ((old_release, core_old), (new_release, core_new), (release, fresh))}
+        def find(pkg, _patch, version=None):
+            if pkg is u.FOREVER_CORE:
+                return old_release if version == '1.15.1' else new_release
+            return release
+        with patch.object(u, 'PACKAGES', (f.pkg,)), patch.object(u, 'find_release', side_effect=find), \
+                patch.object(u, 'fetch', side_effect=lambda url, _: archives[url]):
+            args = dict(game=f.game, baselines=f.baselines, backups=f.backups, running=lambda: False)
+            rows = []
+            result = u.run_updates(True, lambda *row: rows.append(row), **args)
+            self.assertEqual(result[0], 2, rows)
+            repeat = u.run_updates(False, lambda *row: rows.append(row), **args)
+            self.assertEqual(repeat[:2], (0, 1), rows)  # The fixture has no bundled hub.
+        self.assertEqual(u.installed_version(f.addons, u.FOREVER_CORE), '1.15.6')
+        self.assertEqual((f.baselines/'forevercore-1.15.6.zip').read_bytes(), core_new)
+
+    def test_other_addon_named_forever_core_is_preserved(self):
+        f = self.fixture
+        core, _ = self.core_archive('1.15.1', project='12345')
+        with zipfile.ZipFile(BytesIO(core)) as archive:
+            archive.extractall(f.addons)
+        before = u.read_live(f.addons, (u.FOREVER_CORE.anchor,))
+        raw, release = self.embedded_archive()
+        result, rows = f.run_sample(True, raw, release)
+        self.assertEqual(result[0], 1, rows)
+        row = next(row for row in rows if row[0] == u.FOREVER_CORE.label)
+        self.assertIn('無法確認', row[-1])
+        self.assertEqual(u.read_live(f.addons, (u.FOREVER_CORE.anchor,)), before)
 
 
 class IntegerReleaseTests(unittest.TestCase):
