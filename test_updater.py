@@ -209,6 +209,67 @@ class InstallTests(unittest.TestCase):
         self.assertNotIn(b'\r\r\n',result)
 
 
+class EmbeddedForeverCoreTests(unittest.TestCase):
+    def setUp(self):
+        self.fixture = InstallTests()
+        self.fixture.setUp()
+        self.addCleanup(self.fixture.tearDown)
+        self.fixture.pkg = next(pkg for pkg in u.PACKAGES if pkg.key == 'shortest')
+
+    def embedded_archive(self, *, missing_script=None, declare_scripts=True):
+        anchor = self.fixture.pkg.anchor
+        scripts = ('Core/Loader.lua', 'Begin.lua', 'Core.lua', 'End.lua')
+        toc = '## Interface: 16001\n## Version: 1.43.9\n## X-Forever-Core-Embed: 1\nmain.lua\n'
+        if declare_scripts:
+            toc += ''.join(f'Libs/ForeverCore/{script}\n' for script in scripts)
+        stream = BytesIO()
+        with zipfile.ZipFile(stream, 'w') as archive:
+            archive.writestr(f'{anchor}/{anchor}.toc', toc)
+            archive.writestr(f'{anchor}/main.lua', 'return true\n')
+            for script in scripts:
+                if script != missing_script:
+                    archive.writestr(f'{anchor}/Libs/ForeverCore/{script}', 'return true\n')
+        raw = stream.getvalue()
+        return raw, u.Release('1.43.9', 'https://example.invalid/new.zip', len(raw))
+
+    def test_fresh_install_needs_no_standalone_core_and_rechecks_cleanly(self):
+        f = self.fixture
+        raw, release = self.embedded_archive()
+        result, rows = f.run_sample(True, raw, release)
+        self.assertEqual(result[0], 1, rows)
+        self.assertFalse((f.addons/'ForeverCore').exists())
+        self.assertEqual((f.baselines/'shortest-1.43.9.zip').read_bytes(), raw)
+        for apply in (False, True):
+            result, rows = f.run_sample(apply, raw, release)
+            self.assertEqual(result[:2], (0, 1), rows)  # The fixture has no bundled hub.
+            self.assertEqual(rows[0][-1], '已是最新')
+
+    def test_legacy_upgrade_leaves_standalone_core_and_its_personal_files(self):
+        f = self.fixture
+        raw, release = f.archive('1.43.2')
+        self.assertEqual(f.run_sample(True, raw, release)[0][0], 1)
+        extra = f.addons/'ForeverCore/personal.lua'
+        extra.write_bytes(b'return true')
+        before = u.read_live(f.addons, ('ForeverCore',))
+        raw, release = self.embedded_archive()
+        result, rows = f.run_sample(True, raw, release)
+        self.assertEqual(result[0], 1, rows)
+        self.assertEqual(u.read_live(f.addons, ('ForeverCore',)), before)
+        self.assertEqual(u.installed_version(f.addons, f.pkg), '1.43.9')
+        self.assertFalse((f.baselines/'shortest-1.43.2.zip').exists())
+
+    def test_incomplete_embedded_core_is_rejected(self):
+        f = self.fixture
+        for options in ({'missing_script': 'Begin.lua'}, {'declare_scripts': False}):
+            with self.subTest(**options):
+                raw, release = self.embedded_archive(**options)
+                result, rows = f.run_sample(True, raw, release)
+                self.assertEqual(result[0], 0, rows)
+                self.assertIn('ForeverCore', rows[0][-1])
+                self.assertFalse((f.addons/f.pkg.anchor).exists())
+                self.assertFalse((f.baselines/'shortest-1.43.9.zip').exists())
+
+
 class IntegerReleaseTests(unittest.TestCase):
     def test_integer_release_order_and_invalid_versions(self):
         self.assertEqual(u.version_name("v853"), "853")

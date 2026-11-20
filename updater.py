@@ -214,21 +214,25 @@ def assert_plain(path: Path):
         raise SkipUpdate(f"資料夾或檔案使用連結，請手動檢查 {path.name}")
 
 
-def installed_version(path: Path, pkg: Package) -> str:
-    folder = path / pkg.anchor
+def installed_toc(path: Path, name: str) -> bytes:
+    folder = path / name
     assert_plain(folder)
+    for toc in toc_names(name):
+        file = folder / toc
+        if file.is_file():
+            assert_plain(file)
+            return file.read_bytes()
+    raise SkipUpdate("找不到插件版本檔。")
+
+
+def installed_version(path: Path, pkg: Package, toc: bytes | None = None) -> str:
     def read_marker(relative):
         marker = path / relative
         if not marker.is_file():
             return b""
         assert_plain(marker)
         return marker.read_bytes()
-    for name in toc_names(pkg.anchor):
-        file = folder / name
-        if file.is_file():
-            assert_plain(file)
-            return package_version(pkg, file.read_bytes(), read_marker)
-    raise SkipUpdate("找不到插件版本檔。")
+    return package_version(pkg, installed_toc(path, pkg.anchor) if toc is None else toc, read_marker)
 
 
 def trusted_url(url: str) -> bool:
@@ -350,7 +354,7 @@ def recover_baseline(pkg: Package, version: str, patch: str, interface: str,
             archive = Path(tmp) / "original.zip"
             archive.write_bytes(raw)
             original = read_zip(archive, folders)
-            validate_package(original, pkg, folders, interface, version)
+            validate_package(original, pkg, archive_folders(pkg, folders, original), interface, version)
             if destination.exists():
                 raise SkipUpdate("比對檔在準備期間有變動。")
             archive.rename(destination)
@@ -404,22 +408,44 @@ def read_live(addons: Path, folders: tuple[str, ...]):
     return files
 
 
+def archived_toc(files, folder: str):
+    return next((files[f"{folder}/{name}".casefold()][1] for name in toc_names(folder)
+                 if f"{folder}/{name}".casefold() in files), None)
+
+
+def embeds_forever_core(pkg: Package, fields) -> bool:
+    return (pkg.key == "shortest" and pkg.anchor == "ShortestPathForever" and "ForeverCore" in pkg.folders
+            and fields.get("X-Forever-Core-Embed") == "1")
+
+
+def archive_folders(pkg: Package, folders: tuple[str, ...], files) -> tuple[str, ...]:
+    toc = archived_toc(files, pkg.anchor)
+    if toc and embeds_forever_core(pkg, toc_fields(toc)):
+        return tuple(folder for folder in folders if folder != "ForeverCore")
+    return folders
+
+
 def validate_package(files, pkg: Package, folders: tuple[str, ...], interface: str, version: str):
     for folder in folders:
-        toc = next((files.get(f"{folder}/{name}".casefold()) for name in toc_names(folder)
-                    if f"{folder}/{name}".casefold() in files), None)
+        toc = archived_toc(files, folder)
         if toc is None:
             raise SkipUpdate(f"套件缺少已安裝的模組 {folder}")
-        fields = toc_fields(toc[1])
+        fields = toc_fields(toc)
         if interface not in re.findall(r"\d+", fields.get("Interface", "")):
             raise SkipUpdate(f"{folder} 的 TOC 未標示目前《永恆》介面版本 {interface}。")
-        if folder == pkg.anchor and archived_version(pkg, toc[1], files) != version:
+        if folder == pkg.anchor and archived_version(pkg, toc, files) != version:
             raise SkipUpdate("ZIP 內版本與發布版本不一致。")
-        for line in toc[1].decode("utf-8-sig").splitlines():
+        load_files = set()
+        for line in toc.decode("utf-8-sig").splitlines():
             filename = line.strip().split(" [", 1)[0].replace("\\", "/")
             if not filename.startswith("#") and filename.lower().endswith((".lua", ".xml")):
+                load_files.add(filename.casefold())
                 if f"{folder}/{filename}".casefold() not in files:
                     raise SkipUpdate(f"{folder} 缺少 TOC 載入檔 {filename}")
+        if folder == pkg.anchor and embeds_forever_core(pkg, fields):
+            core_scripts = {f"libs/forevercore/{name}" for name in ("core/loader.lua", "begin.lua", "core.lua", "end.lua")}
+            if not core_scripts <= load_files:
+                raise SkipUpdate("最短路線的 TOC 缺少內嵌 ForeverCore 載入項目。")
 
 
 def normalized_text(data: bytes) -> str:
@@ -576,8 +602,7 @@ def previous_package(pkg: Package, original, live, temp: Path, folders: tuple[st
 def validate_dependencies(files, addons: Path, folders: tuple[str, ...]):
     available = {n.casefold() for n in folders}
     for folder in folders:
-        toc = next((files[f"{folder}/{name}".casefold()][1] for name in toc_names(folder)
-                    if f"{folder}/{name}".casefold() in files), None)
+        toc = archived_toc(files, folder)
         if toc is None:
             raise SkipUpdate(f"套件缺少模組 {folder}")
         fields = toc_fields(toc)
@@ -615,9 +640,6 @@ def merge_files(base, current, fresh, temp: Path):
 def install_package(pkg: Package, release: Release, addons: Path, folders: tuple[str, ...],
                     current_version: str | None, interface: str, backups: Path, baselines: Path, running,
                     customizations: Path | None = None, previous_customizations: Path | None = None):
-    existing = tuple(name for name in folders if (addons / name).exists())
-    if not current_version and existing:
-        raise SkipUpdate("主插件缺少但仍有其他模組，請先手動確認，避免覆蓋現有檔案。")
     old_zip = baselines / f"{pkg.key}-{current_version}.zip" if current_version else None
     if old_zip and not old_zip.is_file() and current_version != release.version:
         raise SkipUpdate(f"缺少 {current_version} 舊版原版比對檔，已保留插件，請重新執行更新以補取。")
@@ -637,6 +659,14 @@ def install_package(pkg: Package, release: Release, addons: Path, folders: tuple
         archive = work / "release.zip"
         archive.write_bytes(raw)
         upstream = read_zip(archive, folders)
+        managed_folders = folders
+        folders = archive_folders(pkg, managed_folders, upstream)
+        if folders != managed_folders:
+            # A standalone Core may still carry shared settings or be used by other addons.
+            upstream = {key: entry for key, entry in upstream.items() if not key.startswith("forevercore/")}
+        existing = tuple(name for name in folders if (addons / name).exists())
+        if not current_version and existing:
+            raise SkipUpdate("主插件缺少但仍有其他模組，請先手動確認，避免覆蓋現有檔案。")
         validate_package(upstream, pkg, folders, interface, release.version)
         validate_dependencies(upstream, addons, folders)
         live = read_live(addons, existing)
@@ -644,9 +674,8 @@ def install_package(pkg: Package, release: Release, addons: Path, folders: tuple
             if old_zip.is_file():
                 assert_plain(old_zip)
             original = read_zip(old_zip if old_zip.is_file() else archive, existing)
-            root_toc = next((original.get(f"{pkg.anchor}/{name}".casefold()) for name in toc_names(pkg.anchor)
-                             if f"{pkg.anchor}/{name}".casefold() in original), None)
-            if not root_toc or archived_version(pkg, root_toc[1], original) != current_version:
+            root_toc = archived_toc(original, pkg.anchor)
+            if not root_toc or archived_version(pkg, root_toc, original) != current_version:
                 raise SkipUpdate("原版 ZIP 與現有版本不相符。")
             if customizations is not None:
                 previous = previous_package(pkg, original, live, work, existing,
@@ -657,6 +686,8 @@ def install_package(pkg: Package, release: Release, addons: Path, folders: tuple
                 merged, count = merge_files(original, live, upstream, work)
         else:
             merged, count = customize_package(pkg, upstream, work, folders, customizations), 0
+        if archive_folders(pkg, managed_folders, merged) != folders:
+            raise SkipUpdate("本機修改影響 ForeverCore 的載入方式，已保留現況。")
         validate_package(merged, pkg, folders, interface, release.version)
         unchanged = current_version == release.version and existing == folders and merged == live
         prepared = work / "new"
@@ -807,10 +838,14 @@ def update_packages(apply, report, addons, backups, baselines, running, patch, i
             current = latest = "—"
             try:
                 exists = (addons / pkg.anchor).exists()
-                current = installed_version(addons, pkg) if exists else None
+                toc = installed_toc(addons, pkg.anchor) if exists else None
+                current = installed_version(addons, pkg, toc) if toc is not None else None
                 release = releases[pkg.key].result()
                 latest = release.version
-                missing = any(not (addons / name).is_dir() for name in pkg.managed_folders)
+                folders = pkg.managed_folders
+                embedded = toc is not None and embeds_forever_core(pkg, toc_fields(toc))
+                missing = any(not (addons / name).is_dir() for name in folders
+                              if not (embedded and name == "ForeverCore"))
                 no_baseline = not (baselines / f"{pkg.key}-{current}.zip").is_file()
                 new_catalog = catalog is not None and catalog.identity is not None and state.get(pkg.key) != catalog.identity
                 if current and (version_order(latest) < version_order(current)
@@ -825,7 +860,6 @@ def update_packages(apply, report, addons, backups, baselines, running, patch, i
                     report(pkg.label, current or "未安裝", latest,
                            note)
                     continue
-                folders = pkg.managed_folders
                 if current and no_baseline and current != latest:
                     existing = tuple(name for name in folders if (addons / name).is_dir())
                     recover_baseline(pkg, current, patch, interface, existing, baselines)

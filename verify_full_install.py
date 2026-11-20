@@ -74,7 +74,11 @@ def main():
                 version = u.installed_version(addons, pkg)
                 archive = baseline / f'{pkg.key}-{version}.zip'
                 if archive.is_file():
-                    assert u.read_live(addons, pkg.managed_folders) == u.read_zip(archive, pkg.managed_folders), pkg.key
+                    files = u.read_zip(archive, pkg.managed_folders)
+                    folders = u.archive_folders(pkg, pkg.managed_folders, files)
+                    assert u.read_live(addons, folders) == {
+                        key: entry for key, entry in files.items() if entry[0].split('/')[0] in folders
+                    }, pkg.key
         # Repeated check must be idempotent and see all installed official packages as current.
         if '--cached' in sys.argv:
             with patch.object(u, 'find_release', side_effect=lambda p, _: releases[p.key]):
