@@ -164,4 +164,91 @@ class CurrentCatalogAdoptionTests(unittest.TestCase):
         self.assertEqual(json.loads(self.state.read_text())['sample'], self.old_identity)
 
 
+class DungeonJournalReplacementTests(unittest.TestCase):
+    def setUp(self):
+        self.f = fixtures.InstallTests()
+        self.f.setUp()
+        self.addCleanup(self.f.tearDown)
+        self.f.pkg = u.DUNGEON_JOURNAL
+        self.raw, self.release = self.f.archive('2.1.3', {'ForeverDungeonJournal/map.tga': b'map'})
+        (self.f.addons/'XiaoHeiAddonHub').mkdir(parents=True)
+        self.atlas = u.ATLASLOOT_FOREVER
+
+    def install_atlas(self):
+        for name in self.atlas.managed_folders:
+            root = self.f.addons/name
+            root.mkdir()
+            (root/f'{name}.toc').write_text('## Interface: 16001\n## Title: AtlasLoot Forever\n'
+                                           '## X-Curse-Project-ID: 1422985\n## Version: v1.4.7\n')
+        self.marker = self.f.addons/self.atlas.anchor/'personal.lua'
+        self.marker.write_bytes(b'player additions')
+
+    def test_install_then_archive_atlas_and_leave_wtf_untouched(self):
+        self.install_atlas()
+        self.f.baselines.mkdir()
+        atlas_zip = self.f.baselines/'atlasloot-1.4.7.zip'
+        atlas_zip.write_bytes(b'old ZIP')
+        wtf = self.f.addons.parents[1]/'WTF'
+        wtf.mkdir()
+        saved = wtf/'AtlasLoot.lua'
+        saved.write_bytes(b'saved variables')
+        self.assertEqual(self.f.run_sample(False, self.raw, self.release)[0], (0, 2, 0))
+        self.assertTrue(self.marker.is_file())
+        result, rows = self.f.run_sample(True, self.raw, self.release)
+        self.assertEqual(result, (2, 2, 0), rows)
+        backup, = self.f.backups.glob('AtlasLoot-*')
+        self.assertFalse(any((self.f.addons/name).exists() for name in self.atlas.managed_folders))
+        self.assertEqual((backup/self.atlas.anchor/self.marker.name).read_bytes(), b'player additions')
+        self.assertEqual((backup/atlas_zip.name).read_bytes(), b'old ZIP')
+        self.assertFalse(atlas_zip.exists())
+        self.assertEqual(saved.read_bytes(), b'saved variables')
+        self.assertEqual(self.f.run_sample(True, self.raw, self.release)[0], (0, 0, 0))
+
+    def test_already_installed_dungeon_journal_still_migrates_atlas(self):
+        self.assertEqual(self.f.run_sample(True, self.raw, self.release)[0], (1, 1, 0))
+        self.install_atlas()
+        with patch.object(u, 'install_package', side_effect=AssertionError('already installed')) as install:
+            result, rows = self.f.run_sample(True, self.raw, self.release)
+            install.assert_not_called()
+        self.assertEqual(result, (1, 1, 0), rows)
+        self.assertFalse(self.marker.exists())
+
+    def test_failed_install_and_missing_dungeon_asset_preserve_atlas(self):
+        self.install_atlas()
+        self.assertEqual(self.f.run_sample(True, b'invalid', self.release)[0][0], 0)
+        self.assertTrue(self.marker.exists())
+        dependent = self.f.addons/'AnotherAddon'
+        dependent.mkdir()
+        (dependent/'AnotherAddon.toc').write_text('## RequiredDeps: AtlasLootClassic\n')
+        self.assertEqual(self.f.run_sample(True, self.raw, self.release)[0], (1, 2, 1))
+        self.assertTrue(self.marker.exists())
+        (dependent/'AnotherAddon.toc').write_text('## OptionalDeps: AtlasLootClassic\n')
+        (self.f.addons/'ForeverDungeonJournal/map.tga').unlink()
+        result, rows = self.f.run_sample(True, self.raw, self.release)
+        self.assertEqual(result, (0, 1, 1), rows)
+        self.assertTrue(self.marker.exists())
+
+    def test_wrong_edition_and_locked_core_preserve_existing_modules(self):
+        self.install_atlas()
+        core = self.marker.parent
+        toc = core/f'{core.name}.toc'
+        original = toc.read_bytes()
+        toc.write_text('## Interface: 11509\n## Title: AtlasLoot Classic\n')
+        self.assertEqual(self.f.run_sample(True, self.raw, self.release)[0], (1, 2, 1))
+        self.assertTrue(self.marker.exists())
+        toc.write_bytes(original)
+        rename = Path.rename
+
+        def locked(path, destination):
+            if path == core:
+                raise PermissionError('in use')
+            return rename(path, destination)
+
+        with patch.object(Path, 'rename', locked):
+            result, rows = self.f.run_sample(True, self.raw, self.release)
+        self.assertEqual(result, (0, 1, 1), rows)
+        self.assertTrue(all((self.f.addons/name).is_dir() for name in self.atlas.managed_folders))
+        self.assertFalse(list(self.f.backups.glob('AtlasLoot-*')))
+
+
 if __name__ == '__main__': unittest.main()

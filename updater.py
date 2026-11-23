@@ -57,6 +57,14 @@ class Package:
         return (self.anchor, *self.folders)
 
 
+DUNGEON_JOURNAL = Package("dungeonjournal", "副本手冊（DungeonJournal）", "ForeverDungeonJournal",
+                          "1707971/dungeonjournal", rf"(?:Forever)?DungeonJournal-?({VERSION})\.zip")
+ATLASLOOT_FOREVER = Package("atlasloot", "AtlasLoot Forever", "AtlasLootClassic", "1422985/atlasloot-forever",
+                            rf"AtlasLoot-Classic-Forever-({VERSION})-\d+-\d+\.zip",
+                            ("AtlasBIStooltips", *(f"AtlasLootClassic_{suffix}" for suffix in
+                             ("Collections", "Crafting", "Data", "DungeonsAndRaids", "Factions", "Options", "PvP"))))
+
+
 PACKAGES = (
     Package("platynator", "怪物名條（Platynator）", "Platynator", "1361299/platynator", rf"Platynator-({VERSION})\.zip"),
     Package("rarescanner", "稀有與寶箱提醒（RareScanner）", "RareScanner", "84208/rarescanner", rf"RareScanner_FOREVER_({VERSION})\.zip"),
@@ -69,8 +77,7 @@ PACKAGES = (
             rf"QuickChannels-v?({VERSION})\.zip"),
     Package("dialogueui", "任務對話介面（Dialogue UI）", "DialogueUI", "989270/dialogueui", rf"DialogueUI-({VERSION})\.zip"),
     Package("lueur", "Lueur", "Lueur", "1732324/lueur", rf"Lueur-({VERSION})\.zip"),
-    Package("dungeonjournal", "副本手冊（DungeonJournal）", "ForeverDungeonJournal", "1707971/dungeonjournal",
-            rf"(?:Forever)?DungeonJournal-?({VERSION})\.zip"),
+    DUNGEON_JOURNAL,
     Package("threat", "仇恨值監控（ThreatClassic2）", "ThreatClassic2", "355497/threatclassic2",
             rf"ThreatClassic2-({VERSION})-forever\.zip"),
     Package("questiedb", "路線地點資料庫（QuestieDB）", "QuestieDB", "1696795/questiedb",
@@ -820,6 +827,85 @@ def run_updates(apply: bool, report, addons: Path | None = None, game: Path = GA
         return update_packages(apply, report, addons, backups, baselines, running, patch, interface, catalog)
 
 
+def retire_atlasloot(addons: Path, baselines: Path, backups: Path, folders: tuple[str, ...],
+                     replacement: Release, interface: str, running):
+    pkg = DUNGEON_JOURNAL
+    baseline = baselines / f"{pkg.key}-{replacement.version}.zip"
+    assert_plain(baseline)
+    if (baseline.stat().st_size != replacement.size or
+            (replacement.digest and replacement.digest != "sha256:" + hashlib.sha256(baseline.read_bytes()).hexdigest())):
+        raise SkipUpdate("副本手冊原版檔未通過完整性檢查。")
+    original = read_zip(baseline, pkg.managed_folders)
+    live = read_live(addons, pkg.managed_folders)
+    validate_package(original, pkg, pkg.managed_folders, interface, replacement.version)
+    validate_package(live, pkg, pkg.managed_folders, interface, replacement.version)
+    validate_dependencies(live, addons, pkg.managed_folders)
+    if original.keys() - live.keys():
+        raise SkipUpdate("副本手冊缺少檔案，已保留 AtlasLoot。")
+
+    atlas = ATLASLOOT_FOREVER
+    paths = [addons / name for name in folders]
+    core = addons / atlas.anchor
+    for path in paths:
+        assert_plain(path)
+        if path.resolve().parent != addons.resolve():
+            raise SkipUpdate("AtlasLoot 模組不在預期路徑。")
+        fields = toc_fields(installed_toc(addons, path.name))
+        if ("AtlasLoot Forever" not in fields.get("Title", "")
+                or not re.search(r"\b16\d{3}\b", fields.get("Interface", ""))
+                or (path == core and fields.get("X-Curse-Project-ID") != "1422985")):
+            raise SkipUpdate(f"無法辨認 {path.name} 為 AtlasLoot Forever。")
+
+    names = {path.name.casefold() for path in paths}
+    for toc in addons.glob("*/*.toc"):
+        if toc.parent.name.casefold() in names:
+            continue
+        assert_plain(toc.parent)
+        assert_plain(toc)
+        fields = toc_fields(toc.read_bytes())
+        dependencies = " ".join(fields.get(field, "") for field in ("Dependencies", "RequiredDeps", "Dep"))
+        if names.intersection(re.split(r"[,\s]+", dependencies.casefold())):
+            raise SkipUpdate(f"{toc.parent.name} 仍需要 AtlasLoot。")
+
+    # Keep a complete, restorable copy outside AddOns, including personal files.
+    # Move the core last so an interrupted migration can still identify its version.
+    original_atlas = None
+    if core in paths:
+        paths.remove(core)
+        archive = baselines / f"{atlas.key}-{installed_version(addons, atlas)}.zip"
+        if archive.exists():
+            assert_plain(archive)
+            original_atlas = archive
+        paths.append(core)
+    if running():
+        raise SkipUpdate("遊戲已重新開啟，已保留 AtlasLoot。")
+    backups.mkdir(parents=True, exist_ok=True)
+    assert_plain(backups)
+    backup = backups / f"AtlasLoot-{datetime.now():%Y%m%d-%H%M%S}-{uuid.uuid4().hex[:6]}"
+    backup.mkdir()
+    moved = []
+    try:
+        if original_atlas:
+            saved = backup / original_atlas.name
+            shutil.copy2(original_atlas, saved)
+            if saved.read_bytes() != original_atlas.read_bytes():
+                raise OSError("AtlasLoot 原版 ZIP 備份驗證失敗。")
+        for path in paths:
+            path.rename(backup / path.name)
+            moved.append(path)
+        if running():
+            raise OSError("遊戲已重新開啟，已還原 AtlasLoot。")
+        if original_atlas:
+            original_atlas.unlink()
+    except OSError:
+        for path in reversed(moved):
+            (backup / path.name).rename(path)
+        if original_atlas:
+            (backup / original_atlas.name).unlink(missing_ok=True)
+        backup.rmdir()
+        raise
+
+
 def update_packages(apply, report, addons, backups, baselines, running, patch, interface, catalog=None):
     planned = catalog.packages if catalog is not None else PACKAGES
     shortest = next((pkg for pkg in planned if bundles_forever_core(pkg)), None)
@@ -842,9 +928,14 @@ def update_packages(apply, report, addons, backups, baselines, running, patch, i
     def previous(key):
         from online import previous_customizations
         return previous_customizations(state.get(key))
-    tracked = {folder for p in planned for folder in p.managed_folders} | {"XiaoHeiAddonHub"}
+    tracked = {folder.casefold() for p in planned for folder in p.managed_folders} | {"xiaoheiaddonhub"}
+    atlas_folders = ()
+    if DUNGEON_JOURNAL in planned and tracked.isdisjoint(name.casefold() for name in ATLASLOOT_FOREVER.managed_folders):
+        atlas_folders = tuple(name for name in ATLASLOOT_FOREVER.managed_folders if (addons / name).exists())
+        tracked.update(name.casefold() for name in atlas_folders)
+    dungeon_release = None
     for folder in sorted(addons.iterdir() if addons.is_dir() else [], key=lambda path: path.name.casefold()):
-        if folder.is_dir() and folder.name not in tracked:
+        if folder.is_dir() and folder.name.casefold() not in tracked:
             note = "本機自製插件" if folder.name == "XiaoHeiAddonHub" else "未設定可信更新來源"
             report(folder.name, "—", "—", f"略過｜{note}")
 
@@ -879,6 +970,8 @@ def update_packages(apply, report, addons, backups, baselines, running, patch, i
                                and state.get(pkg.key) != active_catalog.identity)
                 if current and (version_order(latest) < version_order(current)
                                 or (latest == current and not missing and not no_baseline and not new_catalog)):
+                    if atlas_folders and pkg == DUNGEON_JOURNAL and latest == current:
+                        dungeon_release = release
                     report(pkg.label, current, latest, "已是最新" if latest == current else "保留較新本機版本")
                     continue
                 available += 1
@@ -897,6 +990,8 @@ def update_packages(apply, report, addons, backups, baselines, running, patch, i
                                                 (lambda key=pkg.key: previous(key)) if active_catalog is not None and current else None)
                 if active_catalog is not None:
                     record(pkg.key)
+                if atlas_folders and pkg == DUNGEON_JOURNAL:
+                    dungeon_release = release
                 updated += 1
                 retained = []
                 cleanup = [(backup, backups, True)] if backup else []
@@ -942,6 +1037,19 @@ def update_packages(apply, report, addons, backups, baselines, running, patch, i
         except Exception as exc:
             skipped += 1
             report("小黑插件總入口", "未安裝", "內附版本", f"未安裝｜{process_error(exc)}")
+    if atlas_folders:
+        available += 1
+        try:
+            if apply:
+                if dungeon_release is None:
+                    raise SkipUpdate("副本手冊尚未通過驗證。")
+                retire_atlasloot(addons, baselines, backups, atlas_folders, dungeon_release, interface, running)
+                updated += 1
+            result = "已移出遊戲，備份在「查看保留檔案」" if apply else "副本手冊驗證後移除舊模組並保留備份"
+        except Exception as exc:
+            skipped += 1
+            result = f"保留現況｜{process_error(exc)}"
+        report(ATLASLOOT_FOREVER.label, "已安裝", "已由副本手冊取代", result)
     return updated, available, skipped
 
 
