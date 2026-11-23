@@ -69,10 +69,8 @@ PACKAGES = (
             rf"QuickChannels-v?({VERSION})\.zip"),
     Package("dialogueui", "任務對話介面（Dialogue UI）", "DialogueUI", "989270/dialogueui", rf"DialogueUI-({VERSION})\.zip"),
     Package("lueur", "Lueur", "Lueur", "1732324/lueur", rf"Lueur-({VERSION})\.zip"),
-    Package("atlasloot", "AtlasLoot", "AtlasLootClassic", "1422985/atlasloot-forever",
-            rf"AtlasLoot-Classic-Forever-({VERSION})-\d+-\d+\.zip",
-            ("AtlasBIStooltips", *(f"AtlasLootClassic_{suffix}" for suffix in
-             ("Collections", "Crafting", "Data", "DungeonsAndRaids", "Factions", "Options", "PvP")))),
+    Package("dungeonjournal", "副本手冊（DungeonJournal）", "ForeverDungeonJournal", "1707971/dungeonjournal",
+            rf"(?:Forever)?DungeonJournal-?({VERSION})\.zip"),
     Package("threat", "仇恨值監控（ThreatClassic2）", "ThreatClassic2", "355497/threatclassic2",
             rf"ThreatClassic2-({VERSION})-forever\.zip"),
     Package("questiedb", "路線地點資料庫（QuestieDB）", "QuestieDB", "1696795/questiedb",
