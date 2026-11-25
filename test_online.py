@@ -146,6 +146,20 @@ class OnlineTests(unittest.TestCase):
         state = json.loads((self.f.baselines / '.catalog-state.json').read_text())
         self.assertEqual(state['sample'], one.identity)
 
+    def test_catalog_keeps_newer_hub_when_manager_has_no_prior_hub_state(self):
+        catalog = self.sync()
+        hub = self.f.addons / "XiaoHeiAddonHub"
+        hub.mkdir(parents=True, exist_ok=True)
+        marker = b"## Interface: 16001\n## Version: 0.2.11\nHub.lua\n"
+        (hub / "XiaoHeiAddonHub.toc").write_bytes(marker)
+        (hub / "Hub.lua").write_bytes(b"-- newer local release\n")
+        for expected in ((1, 1, 0), (0, 0, 0)):
+            result, rows = self.install(catalog)
+            self.assertEqual(result, expected, rows)
+            self.assertIn(("小黑插件總入口", "0.2.11", "0.1.11", "保留較新本機版本"), rows)
+            self.assertEqual((hub / "XiaoHeiAddonHub.toc").read_bytes(), marker)
+            self.assertEqual((hub / "Hub.lua").read_bytes(), b"-- newer local release\n")
+
     def test_app_version_check_and_download_validation(self):
         major, minor, patch_version = o.app_order(o.APP_VERSION)
         next_version = f'{major}.{minor}.{patch_version+1}'

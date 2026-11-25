@@ -1016,11 +1016,14 @@ def update_packages(apply, report, addons, backups, baselines, running, patch, i
                 report(pkg.label, current or "未安裝", latest, f"保留現況｜{process_error(exc)}")
     hub = addons / "XiaoHeiAddonHub"
     hub_changed = catalog is not None and catalog.identity is not None and state.get("hub") != catalog.identity
-    if hub.exists() and not hub_changed:
-        report("小黑插件總入口", "已安裝", "內附版本", "保留現有總入口")
-    else:
-        available += 1
-        try:
+    try:
+        newer_hub = hub_changed and hub.is_dir() and hub_is_newer(addons, catalog.customizations)
+        if newer_hub:
+            report("小黑插件總入口", newer_hub[0], newer_hub[1], "保留較新本機版本")
+        elif hub.exists() and not hub_changed:
+            report("小黑插件總入口", "已安裝", "內附版本", "保留現有總入口")
+        else:
+            available += 1
             if apply:
                 backup = install_hub(addons, interface, running,
                                      catalog.customizations if catalog is not None else None,
@@ -1035,9 +1038,9 @@ def update_packages(apply, report, addons, backups, baselines, running, patch, i
                         report("小黑插件總入口", "已安裝", "整合版本", f"已更新｜舊檔未能完整刪除：{backup}")
                         return updated, available, skipped
             report("小黑插件總入口", "已安裝" if hub_changed else "未安裝", "整合版本", "已同步" if apply else "可安裝／同步")
-        except Exception as exc:
-            skipped += 1
-            report("小黑插件總入口", "未安裝", "內附版本", f"未安裝｜{process_error(exc)}")
+    except Exception as exc:
+        skipped += 1
+        report("小黑插件總入口", "未安裝", "內附版本", f"未安裝｜{process_error(exc)}")
     if atlas_folders:
         available += 1
         try:
@@ -1052,6 +1055,19 @@ def update_packages(apply, report, addons, backups, baselines, running, patch, i
             result = f"保留現況｜{process_error(exc)}"
         report(ATLASLOOT_FOREVER.label, "已安裝", "已由副本手冊取代", result)
     return updated, available, skipped
+
+
+def hub_is_newer(addons: Path, customizations: Path) -> tuple[str, str] | None:
+    name = "XiaoHeiAddonHub"
+    try:
+        current = version_name(toc_fields(installed_toc(addons, name)).get("Version", ""))
+    except (OSError, UnicodeDecodeError, SkipUpdate):
+        return None
+    with zipfile.ZipFile(customizations / "hub.zip") as archive:
+        bundled = version_name(toc_fields(archive.read(f"{name}/{name}.toc")).get("Version", ""))
+    if version_order(current) > version_order(bundled):
+        return current, bundled
+    return None
 
 
 def install_hub(addons: Path, interface: str, running, customizations: Path | None = None,
