@@ -105,6 +105,14 @@ PACKAGES = (
             rf"DBM-Dungeons-({VERSION})\.zip", ("DBM-Party-Vanilla",)),
     Package("dbm-raid", "DBM 團隊及世界首領", "DBM-Raids-Vanilla", "DeadlyBossMods/DBM-Vanilla",
             rf"DBM-Vanilla_SoD-({VERSION})\.zip", ("DBM-Azeroth",)),
+    Package("rurutia", "露露緹婭 DBM 語音包", "DBM-VPRurutia", "1711883/dbm-voicepack-rurutia",
+            rf"DBM-VPRurutia[ -]+({VERSION})\.zip"),
+    Package("hunterpetinfo", "獵人寵物查詢", "ForeverHunterPetInfo", "1811105/hunterpetinfo-forever",
+            rf"ForeverHunterPetInfo-({VERSION})-forever\.zip"),
+    Package("levelingbis", "練等裝備推薦", "ForeverLevelingBiS", "1719370/forever-leveling-bis",
+            rf"ForeverLevelingBiS-({VERSION})-forever\.zip"),
+    Package("plg", "專業技能升級指南（PLG）", "ProfessionLevelingGuide", "1682685/plg-profession-leveling-guide",
+            rf"ProfessionLevelingGuide-({VERSION})\.zip"),
 )
 
 FOREVER_CORE = Package("forevercore", "永恆共用元件（ForeverCore）", "ForeverCore", "1796337/forevercore",
