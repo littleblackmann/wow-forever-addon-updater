@@ -37,6 +37,7 @@ MAX_ZIP = 150 * 1024**2
 MAX_UNPACKED = 400 * 1024**2
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 VERSION = r"(?:[vV]?\d+(?:\.\d+){0,3}(?:[ -]?[a-z])?|[rR]\d+)"
+UNMANAGED_ADDON_STATUS = "未納入整合｜已保留"
 
 
 class SkipUpdate(Exception):
@@ -935,9 +936,9 @@ def update_packages(apply, report, addons, backups, baselines, running, patch, i
         tracked.update(name.casefold() for name in atlas_folders)
     dungeon_release = None
     for folder in sorted(addons.iterdir() if addons.is_dir() else [], key=lambda path: path.name.casefold()):
-        if folder.is_dir() and folder.name.casefold() not in tracked:
-            note = "本機自製插件" if folder.name == "XiaoHeiAddonHub" else "未設定可信更新來源"
-            report(folder.name, "—", "—", f"略過｜{note}")
+        if (folder.name.casefold() not in tracked and folder.is_dir()
+                and any(toc.is_file() for toc in folder.glob("*.toc"))):
+            report(folder.name, "—", "—", UNMANAGED_ADDON_STATUS)
 
     updated = available = skipped = 0
     with ThreadPoolExecutor(max_workers=4) as pool:

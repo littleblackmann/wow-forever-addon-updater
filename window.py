@@ -20,6 +20,7 @@ from updater import (APP, RESOURCES, backup_location, client_patch, process_erro
 
 APP_ICON = RESOURCES / "圖示" / "WoW-Forever.ico"
 PROJECT_URL = "https://littleblackmann.github.io/projects/forever-addon-manager.html"
+OTHER_ADDONS_GROUP = "other-addons"
 
 
 class UpdaterWindow:
@@ -418,8 +419,7 @@ class UpdaterWindow:
                     self.root.destroy()
                     return
                 if kind == "row":
-                    stripe = ("alt",) if len(self.table.get_children()) % 2 else ()
-                    self.table.insert("", "end",text="  "+str(value[0]),image=self.theme.badge(str(value[0])),values=value,tags=stripe)
+                    self.add_result_row(value)
                     continue
                 self.busy = False
                 self.progress.stop()
@@ -438,8 +438,29 @@ class UpdaterWindow:
         self.maybe_show_update_news()
         self.root.after(100, self.poll)
 
+    def add_result_row(self, row):
+        table = self.table
+        if row[3] == u.UNMANAGED_ADDON_STATUS:
+            parent = OTHER_ADDONS_GROUP
+            if not table.exists(parent):
+                table.insert("", "end", iid=parent, open=False)
+            count = len(table.get_children(parent))
+            table.item(parent, text=f"其他已安裝插件（{count + 1}）")
+            position = "end"
+        else:
+            parent = ""
+            count = table.index(OTHER_ADDONS_GROUP) if table.exists(OTHER_ADDONS_GROUP) else len(table.get_children())
+            position = count
+        name = str(row[0])
+        stripe = ("alt",) if count % 2 else ()
+        table.insert(parent, position, text="  " + name, image=self.theme.badge(name),
+                     values=row, tags=stripe)
+
     def show_details(self, event):
         item = self.table.focus() if event.keysym=="Return" else self.table.identify_row(event.y)
+        if item == OTHER_ADDONS_GROUP:
+            self.table.item(item, open=not self.table.item(item, "open"))
+            return "break"
         if item:
             name, current, latest, status = self.table.item(item, "values")
             messagebox.showinfo(name, f"本機 {current}　發布 {latest}\n\n{status}", parent=self.root)

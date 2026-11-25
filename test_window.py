@@ -3,6 +3,7 @@ import gc
 import tempfile
 import time
 import tkinter as tk
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -116,6 +117,39 @@ class WindowTests(unittest.TestCase):
             self.assertNotIn('disabled', self.app.folder_button.state())
             self.assertEqual(run.call_args.kwargs['game'], self.game)
             self.assertFalse(run.call_args.args[0])
+
+    def test_detected_addons_outside_catalog_are_grouped_below_managed_results(self):
+        addons = self.game / "_forever_" / "Interface" / "AddOns"
+        for name in ("XiaoHeiAddonHub", "MyAddon", "AnotherAddon", "BackupFolder"):
+            (addons / name).mkdir(parents=True)
+        for name in ("MyAddon", "AnotherAddon"):
+            (addons / name / f"{name}.toc").write_text("## Interface: 16001\n", encoding="ascii")
+        catalog = ui.online.Catalog((), u.CUSTOMIZATIONS, None, "test")
+        for apply in (False, True):
+            with self.subTest(apply=apply):
+                table = self.app.table
+                table.delete(*table.get_children())
+                def report(*row):
+                    self.app.events.put(("row", row))
+                result = u.update_packages(apply, report, addons, self.game / "backups",
+                                           self.game / "baselines", lambda: False, "1.60.1", "16001", catalog)
+                report("已收錄插件", "1.0", "2.0", "保留現況｜下載失敗")
+                self.app.poll()
+                group = ui.OTHER_ADDONS_GROUP
+                rows = table.get_children()
+                self.assertEqual(result, (0, 0, 0))
+                self.assertEqual(len(rows), 3)
+                self.assertEqual(rows[-1], group)
+                self.assertEqual(table.item(rows[1], "values")[-1], "保留現況｜下載失敗")
+                self.assertEqual(table.item(group, "text"), "其他已安裝插件（2）")
+                self.assertFalse(table.item(group, "open"))
+                children = table.get_children(group)
+                self.assertEqual([table.item(child, "values")[0] for child in children],
+                                 ["AnotherAddon", "MyAddon"])
+                table.focus(group)
+                self.assertEqual(self.app.show_details(SimpleNamespace(keysym="Return")), "break")
+                self.assertTrue(table.item(group, "open"))
+                self.assertTrue((addons / "MyAddon" / "MyAddon.toc").is_file())
 
     def test_info_window_does_not_grab_main_or_create_duplicate_windows(self):
         popup = self.app.show_disclaimer()
